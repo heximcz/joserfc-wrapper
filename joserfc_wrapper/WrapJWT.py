@@ -1,13 +1,12 @@
 import time
 from joserfc_wrapper.exceptions import StorageObjectError, CreateTokenException
-from joserfc_wrapper import AbstractKeyStorage
-from joserfc_wrapper import svault
+from joserfc_wrapper import AbstractKeyStorage, StorageVault
 from joserfc.jwk import ECKey, OctKey
 from joserfc import jwt
 
 
-class wjwt:
-    def __init__(self, storage: AbstractKeyStorage = svault()) -> None:
+class WrapJWT:
+    def __init__(self, storage: AbstractKeyStorage = StorageVault()) -> None:
         """
         Handles for JWT
 
@@ -19,14 +18,14 @@ class wjwt:
             raise StorageObjectError
         self.__storage = storage
 
-    # def get_token(self) -> str | None:
-    #     """
-    #     Returns the generated token.
+    def validate():
+        pass
 
-    #     :returns: The JWT token, or None if not yet created.
-    #     :rtype str | None:
-    #     """
-    #     return self.__token
+    def secret():
+        pass
+
+    def unsecret():
+        pass
 
     def create(self, claims: dict) -> str:
         """
@@ -41,10 +40,8 @@ class wjwt:
         # check required claims
         self.__check_claims(claims)
 
-        # load last keys
+        # load last keys - automatickly use last generated keys
         kid, last_keys = self.__storage.load_keys()
-        # print(last_keys["data"]["keys"]["private"])
-        # exit(0)
 
         # set kid
         headers = {

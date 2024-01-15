@@ -4,7 +4,7 @@ import json
 from joserfc_wrapper import AbstractKeyStorage
 
 
-class sfile(AbstractKeyStorage):
+class StorageFile(AbstractKeyStorage):
     def __init__(self, cert_dir: str = os.environ["CERT_DIR"]) -> None:
         """
         :cert_dir: - default: os.environ['CERT_DIR']

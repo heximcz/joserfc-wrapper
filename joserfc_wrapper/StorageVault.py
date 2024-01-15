@@ -3,7 +3,7 @@ import hvac
 from joserfc_wrapper import AbstractKeyStorage
 
 
-class svault(AbstractKeyStorage):
+class StorageVault(AbstractKeyStorage):
     def __init__(
         self,
         url: str = os.environ["VAULT_URL"],

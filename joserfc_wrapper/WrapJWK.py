@@ -5,13 +5,13 @@ from joserfc_wrapper.exceptions import (
     StorageObjectError,
     KeysNotGenerated,
 )
-from joserfc_wrapper import svault, AbstractKeyStorage
+from joserfc_wrapper import StorageVault, AbstractKeyStorage
 
 # TODO: add jwe 
 # TODO: add future count param to keys for jwt generatet with this key
 
-class wjwk:
-    def __init__(self, storage: AbstractKeyStorage = svault()) -> None:
+class WrapJWK:
+    def __init__(self, storage: AbstractKeyStorage = StorageVault()) -> None:
         """
         Handles generation, loading, and saving of private and public keys.
 
