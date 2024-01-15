@@ -7,14 +7,11 @@ from joserfc_wrapper import AbstractKeyStorage
 class StorageFile(AbstractKeyStorage):
     def __init__(self, cert_dir: str = os.environ["CERT_DIR"]) -> None:
         """
-        :cert_dir: - default: os.environ['CERT_DIR']
+        :param cert_dir: - by default from os.environ['CERT_DIR']
+        :type str:
         """
         # path to the directory where the certificates are stored
         self.__cert_dir = cert_dir
-
-        # part of the file name for private and public keys
-        self.private_suffix = "private"
-        self.public_suffix = "public"
 
     def get_last_kid(self) -> str:
         """Return last Key ID"""

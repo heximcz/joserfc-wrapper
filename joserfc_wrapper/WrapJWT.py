@@ -18,13 +18,13 @@ class WrapJWT:
             raise StorageObjectError
         self.__storage = storage
 
-    def validate():
+    def validate() -> bool:
         pass
 
-    def secret():
+    def secret() -> str:
         pass
 
-    def unsecret():
+    def unsecret() -> str:
         pass
 
     def create(self, claims: dict) -> str:
@@ -59,11 +59,10 @@ class WrapJWT:
         """
         Checks if the claim contains all required keys with valid types.
 
-        Params:
-            claims: The payload to check.
-
-        Raises:
-            CreateTokenException: If required payload arguments are missing or invalid.
+        :param claims:
+        :type dict:
+        :raises CreateTokenException: invalid claims
+        :returns None:
         """
         required_keys = {
             "iss": str,  # Issuer expected to be a string

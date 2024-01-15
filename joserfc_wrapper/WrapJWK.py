@@ -46,7 +46,12 @@ class WrapJWK:
         return self.__private
 
     def generate_keys(self) -> None:
-        """Generate keys"""
+        """
+        Generate keys
+        
+        :raises GenerateKeysError:
+        :returns None:
+        """
         try:
             self.__kid = uuid.uuid4().hex.lower()
             key = ECKey.generate_key("P-256")

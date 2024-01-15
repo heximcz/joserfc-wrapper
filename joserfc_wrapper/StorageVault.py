@@ -13,11 +13,11 @@ class StorageVault(AbstractKeyStorage):
         """
         Handles for HashiCorp Vault Storage
         
-        :param url: - default: os.environ['VAULT_URL']
+        :param url: - by default from os.environ['VAULT_URL']
         :type str:
-        :param token: - defult: os.environ['VAULT_TOKEN']
+        :param token: - by defult from os.environ['VAULT_TOKEN']
         :type str:
-        :param mount: - default os.environ["VAULT_MOUNT"]
+        :param mount: - by default from os.environ["VAULT_MOUNT"]
         :type str:
         """
         self.__client = hvac.Client(url=url, token=token)
@@ -34,7 +34,7 @@ class StorageVault(AbstractKeyStorage):
             mount_point=self.__mount,
         )
 
-        return result["data"]["lid"]
+        return result["data"]["kid"]
 
     def load_keys(self, kid: str = None) -> tuple[str, dict]:
         """Load keys"""
@@ -61,7 +61,7 @@ class StorageVault(AbstractKeyStorage):
     def __save_last_id(self, kid: str) -> None:
         """Save last Key ID"""
 
-        secret = {"lid": kid}
+        secret = {"kid": kid}
 
         self.__client.secrets.kv.v1.create_or_update_secret(
             mount_point=self.__mount, path=self.last_id_path, secret=secret
