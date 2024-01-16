@@ -19,23 +19,21 @@ class WrapJWT:
         """
         Handles for JWT
 
-        :param wrapjwk: jwk object
+        :param wrapjwk: for non vault storage
         :type WrapJWK:
         """
-        # define storage manager
         if not isinstance(wrapjwk, WrapJWK):
             raise ObjectTypeError
         self.__jwk = wrapjwk
-
         self.__kid = None
 
-    def get_kid(self) -> str:
+    def get_kid(self) -> str | None:
         """Return Key ID"""
         return self.__kid
 
     def decode(self, token: str) -> Token:
         """Decode token"""
-        if self.__load_keys(token):
+        if self.__load_keys_decode(token):
             key = ECKey.import_key(self.__jwk.get_private_key())
             return jwt.decode(token, key)
         raise TokenKidInvalidError
@@ -59,6 +57,9 @@ class WrapJWT:
         """
         # check required claims
         self.__check_claims(claims)
+
+        # load last keys
+        self.__load_keys()
 
         # create header
         headers = {"alg": "ES256", "kid": self.__jwk.get_kid()}
@@ -93,36 +94,35 @@ class WrapJWT:
                     f"Incorrect type for payload argument '{key}': Expected {expected_type.__name__}, got {type(claims[key]).__name__}."
                 )
 
-    def __base64_url_decode(self, input):
-        # Correct padding if necessary
-        remainder = len(input) % 4
-        if remainder > 0:
-            input += "=" * (4 - remainder)
+    def __load_keys(self, kid: str = None) -> None:
+        self.__jwk.load_keys(kid)
 
-        # Convert from URL safe base64 format
-        return base64.urlsafe_b64decode(input)
-
-    def __decode_jwt(self, jwt):
-        header, payload, _ = jwt.split(".")
-        decoded_header = json.loads(self.__base64_url_decode(header).decode("utf-8"))
-        return decoded_header
-
-    def __validate_kid(self, kid: str) -> bool:
-        try:
-            # Parse the given string as a UUID
-            uuid_obj = uuid.UUID(kid)
-
-            # Check if it is a valid UUID4
-            return uuid_obj.version == 4
-        except ValueError:
-            # If parsing the UUID raises a ValueError, it's not a valid UUID
-            return False
-
-    def __load_keys(self, token: str) -> bool | None:
-        """Load keys for a token"""
+    def __load_keys_decode(self, token: str) -> bool | None:
+        """Load right keys for a token"""
         kid = self.__decode_jwt(token)["kid"]
         if not self.__validate_kid(kid):
             return False
         self.__kid = kid
-        self.__jwk.load_keys(kid)
+        self.__load_keys(kid)
         return True
+
+    def __decode_jwt(self, token: str) -> str:
+        """Decode token for get KID"""
+        header, _, _ = token.split(".")
+        decoded_header = json.loads(self.__base64_url_decode(header).decode("utf-8"))
+        return decoded_header
+
+    def __validate_kid(self, kid: str) -> bool:
+        """Validate Key ID"""
+        try:
+            uuid_obj = uuid.UUID(kid)
+            return uuid_obj.version == 4
+        except ValueError:
+            return False
+
+    def __base64_url_decode(self, header: str) -> str:
+        """Just b64 decode"""
+        remainder = len(header) % 4
+        if remainder > 0:
+            header += "=" * (4 - remainder)
+        return base64.urlsafe_b64decode(header)
