@@ -87,7 +87,7 @@ myjwk.generate_keys()
 myjwk.save_keys()
 ```
 
-#### JWT - Multiple examples with Vault storage
+#### Examples with Vault storage
 
 ```python
 from hvac.exceptions import InvalidPath
@@ -305,7 +305,16 @@ try:
 
 except FileNotFoundError as e:
     # create JWK first
-    print(f"Invalid path, key not exist in the storage.")
+    print(f"Key not exist in the storage.")
     print(f"{e}")
 
 ```
+
+#### Exceptions
+For debuging is there are a few exceptions which can be found here:
+- [`joserfc exceptions`](https://github.com/authlib/joserfc/blob/main/src/joserfc/errors.py)
+- [`hvac exceptions`](https://hvac.readthedocs.io/en/stable/source/hvac_exceptions.html)
+- [`build-in ecxceptions`](https://github.com/heximcz/joserfc-wrapper/blob/main/joserfc_wrapper/exceptions.py)
+
+
+#### Anyone who wants to contribute to the development of this library is welcome. Ideally in the form of PR.
