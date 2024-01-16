@@ -20,10 +20,6 @@ class ObjectTypeError(WrapperErrors):
 
 
 # JWK
-class KeysNotGenerated(WrapperErrors):
-    error = "Generate new or load keys first."
-
-
 class GenerateKeysError(WrapperErrors):
     error = "Error when generate new keys."
     description = "Check path."
