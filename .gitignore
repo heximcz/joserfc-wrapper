@@ -1,4 +1,5 @@
-poetry.lock
 /doc
+/dist
+poetry.lock
 .venv
 __pycache__
