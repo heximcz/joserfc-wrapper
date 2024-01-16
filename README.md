@@ -22,7 +22,7 @@ from joserfc_wrapper.exceptions import ObjectTypeError
 from joserfc_wrapper import WrapJWK, StorageVault, StorageFile
 
 """
-The basic repository for signature keys is HashiCorp Vault, but there
+The default repository for signature keys is HashiCorp Vault, but there
 is also the option to store keys in standard disk files. If neither
 option is suitable, it is possible to write your own object for
 manipulating signature keys (e.g., for storing them in a database).
