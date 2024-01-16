@@ -1,6 +1,4 @@
-# - in progress -
-
-## `joserfc-wrapper` is a library for easy use of JWT and automatic management of signature keys.
+### `joserfc-wrapper` is a library for easy use of JWT and automatic management of signature keys.
 
 
 #### Reason
