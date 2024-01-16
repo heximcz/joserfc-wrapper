@@ -281,6 +281,30 @@ except FileNotFoundError as e:
     print(f"{e}")
 ```
 
+#### A bit of magic
+By default, you can sign an unlimited number of tokens with a single key.
+However, that doesn't sound like a good idea. Therefore, there is a bit of
+magic, and when creating tokens, you can set the payload as the maximum
+allowed number of tokens to be signed with the same key. However, it is
+necessary to keep in mind that the keys are stored and it is necessary to
+find a good compromise in setting the payload so as not to overwhelm the storage.
+```python
+""" vault storage """
+myjwt = WrapJWT()
+# generate new token with payload
+token = myjwt.create(claims=claims, payload=10)
+print(f"Token: {token[:30]}...,  Length: {len(token)}bytes")
+
+""" file storage """
+file = StorageFile()
+myjwk = WrapJWK(storage=file)
+myjwt = WrapJWT(myjwk)
+# generate new token with payload
+token = myjwt.create(claims=claims, payload=3)
+print(f"Token: {token[:30]}...,  Length: {len(token)}bytes")
+
+```
+
 #### Exceptions
 For debuging is there are a few exceptions which can be found here:
 - [`joserfc exceptions`](https://github.com/authlib/joserfc/blob/main/src/joserfc/errors.py)

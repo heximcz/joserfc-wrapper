@@ -44,14 +44,18 @@ class WrapJWT:
         reg = JWTClaimsRegistry(**claims_for_registry)
         reg.validate(token.claims)
 
-    def create(self, claims: dict) -> str:
+    def create(self, claims: dict, payload: int = 0) -> str:
         # TODO: Counter
         """
         Create a JWT Token with claims and signed with existing key.
 
         :param claims:
         :type dict:
-        :raises CreateTokenException: invalid claims
+        :param payload: 0 = unlimited. In case it is set, it checks how many times the key
+          has been used for signing tokens. If the value is exceeded,
+          a new key is automatically generated.
+        :type int:
+        :raises CreateTokenException:
         :returns: jwt token
         :rtype str:
         """
@@ -60,14 +64,25 @@ class WrapJWT:
 
         # load last keys
         self.__load_keys()
+        if payload and self.__jwk.get_counter() >= payload:
+            self.__jwk.generate_keys()
+            self.__jwk.save_keys()
 
         # create header
         headers = {"alg": "ES256", "kid": self.__jwk.get_kid()}
         # add actual iat to claims
         claims["iat"] = int(time.time())  # actual unix timestamp
 
+        # generate token
         private = ECKey.import_key(self.__jwk.get_private_key())
-        return jwt.encode(headers, claims, private)
+        token = jwt.encode(headers, claims, private)
+
+        # save counter
+        self.__jwk.increase_counter()
+        self.__jwk.save_keys()
+
+        return token
+
 
     def __check_claims(self, claims: dict) -> None | CreateTokenException:
         """
