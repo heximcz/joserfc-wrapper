@@ -1,33 +1,33 @@
 import time
-from joserfc_wrapper.exceptions import StorageObjectError, CreateTokenException
-from joserfc_wrapper import AbstractKeyStorage, StorageVault
-from joserfc.jwk import ECKey, OctKey
+from joserfc_wrapper.exceptions import ObjectTypeError, CreateTokenException
+from joserfc_wrapper import WrapJWK
+from joserfc.jwk import ECKey
 from joserfc import jwt
 
 
 class WrapJWT:
-    def __init__(self, storage: AbstractKeyStorage = StorageVault()) -> None:
+    def __init__(self, wrapjwk: WrapJWK = WrapJWK()) -> None:
         """
         Handles for JWT
 
-        :param storage: Storage object
-        :type AbstractKeyStorage:
+        :param wrapjwk: by default new instance
+        :type WrapJWK:
         """
         # define storage manager
-        if not isinstance(storage, AbstractKeyStorage):
-            raise StorageObjectError
-        self.__storage = storage
+        if not isinstance(wrapjwk, WrapJWK):
+            raise ObjectTypeError
+        
+        self.__jwk = wrapjwk
+
+        # load last keys if no exist in jwk
+        if not self.__jwk.get_private_key():
+            self.__jwk.load_keys()
 
     def validate() -> bool:
         pass
 
-    def secret() -> str:
-        pass
-
-    def unsecret() -> str:
-        pass
-
     def create(self, claims: dict) -> str:
+        # TODO: Counter
         """
         Create a JWT Token with claims and signed with existing key.
 
@@ -40,20 +40,16 @@ class WrapJWT:
         # check required claims
         self.__check_claims(claims)
 
-        # load last keys - automatickly use last generated keys
-        kid, last_keys = self.__storage.load_keys()
-
-        # set kid
+        # create header
         headers = {
             "alg": "ES256",
-            "kid": kid
+            "kid": self.__jwk.get_kid()
         }
-        # add dactual iat to claims
+        # add actual iat to claims
         claims["iat"] = int(time.time())  # actual unix timestamp
 
-        keys = ECKey.import_key(last_keys["data"]["keys"]["private"])
-        return jwt.encode(headers, claims, keys)
-
+        private = ECKey.import_key(self.__jwk.get_private_key())
+        return jwt.encode(headers, claims, private)
 
     def __check_claims(self, claims: dict) -> None | CreateTokenException:
         """

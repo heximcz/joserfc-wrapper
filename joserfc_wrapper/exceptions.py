@@ -14,15 +14,13 @@ class WrapperErrors(Exception):
         message = "{}: {}".format(self.error, self.description)
         super(WrapperErrors, self).__init__(message)
 
+class ObjectTypeError(WrapperErrors):
+    error = "Not correct object type"
+
+
 # JWK
 class KeysNotGenerated(WrapperErrors):
-    error = "Generate new keys first."
-
-
-class StorageObjectError(WrapperErrors):
-    error = "Storage is not a object"
-    description = "AbstractKeyStorage"
-
+    error = "Generate new or load keys first."
 
 class GenerateKeysError(WrapperErrors):
     error = "Error when generate new keys."
@@ -35,6 +33,7 @@ class KeysSaveError(WrapperErrors):
 
 class KeysLoadError(WrapperErrors):
     error = "Unable to load files. Check the path is correct."
+
 
 # JWT
     

@@ -35,12 +35,16 @@ class StorageFile(AbstractKeyStorage):
 
     def save_keys(self, kid: str, keys: dict) -> None:
         """Save keys to vault"""
+
+        # must have 'data' key for HashiCorp Vault compatibility
         keys = {
             "data": {
                 "keys": {
                     "private": keys["keys"]["private"],
                     "public":  keys["keys"]["public"],
-                }
+                    "secret":  keys["keys"]["secret"]
+                },
+                "counter": keys["keys"]["counter"]
             }
         }
 
