@@ -1,7 +1,7 @@
 # In progress!
 
 
-## Configuration
+#### Configuration
 ```bash
 # Configure environment. For example in .venv/bin/activate:
 
@@ -14,7 +14,7 @@ export VAULT_MOUNT="<secret mount>"
 export CERT_DIR="/tmp"
 ```
 
-## Create new signature keys
+#### Create new signature keys
 ```python
 from hvac.exceptions import InvalidPath
 
@@ -86,7 +86,7 @@ except ObjectTypeError as e:
     print(f"{e}")
 ```
 
-## Exaples with HashiCorp Vault
+#### JWT - Examples with Vault storage
 
 ```python
 from hvac.exceptions import InvalidPath
