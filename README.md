@@ -7,8 +7,8 @@
 
 This wrapper's main purpose is to simplify the management of signature keys
 for generating JWT tokens and to use RFC for creating keys and tokens using
-the [`joserfc`](https://github.com/authlib/joserfc) library. For managing signature keys, it implements two options.
-The default option is to securely store generated keys in [`HashiCorp Vault`](https://github.com/hvac/hvac).
+the [joserfc](https://github.com/authlib/joserfc) library. For managing signature keys, it implements two options.
+The default option is to securely store generated keys in [HashiCorp Vault](https://github.com/hvac/hvac).
 An optional feature is then the storage of generated keys on the filesystem.
 Last but not least, it is the simple use of JWT tokens in our projects.
 
@@ -19,7 +19,7 @@ is also the option to store keys in files. If neither option is
 suitable, it is possible to write your own object for manipulating
 signature keys (e.g., for storing them in a database).
 However, this custom class must be a subclass of the parent abstract class
-[`AbstractKeyStorage`](https://github.com/heximcz/joserfc-wrapper/blob/main/joserfc_wrapper/AbstractKeyStorage.py) to implement the required methods.
+[AbstractKeyStorage](https://github.com/heximcz/joserfc-wrapper/blob/main/joserfc_wrapper/AbstractKeyStorage.py) to implement the required methods.
 
 #### Storage configuration
 ```bash
@@ -107,8 +107,7 @@ claims = {
 }
 
 try:
-    """ Create basic token """
-    """ Create basic token """
+    """ Create token """
 
     myjwt = WrapJWT()
     # only the last generated key is always used to create a new token
@@ -209,8 +208,7 @@ except InvalidPath as e:
 
 ```python
 try:
-
-    """ Create basic token """
+    """ Create token """
 
     file = StorageFile()
     jwk_file = WrapJWK(storage=file)
@@ -301,13 +299,10 @@ try:
     print(f"[sec]: {secret_data}")
     print(f"[sec_bytes]: {secret_data_bytes}")
 
-    print(f"Done")
-
 except FileNotFoundError as e:
     # create JWK first
     print(f"Key not exist in the storage.")
     print(f"{e}")
-
 ```
 
 #### Exceptions
