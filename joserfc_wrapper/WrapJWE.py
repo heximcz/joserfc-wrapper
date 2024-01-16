@@ -7,20 +7,18 @@ from joserfc_wrapper import WrapJWK
 class WrapJWE:
     def __init__(self, wrapjwk: WrapJWK = WrapJWK()) -> None:
         """
-        Encrypt and decrypt custom data in claims
+        Encrypt and decrypt custom data
 
-        :param wrapjwk: by default new instance
+        :param wrapjwk: for non vault storage
         :type WrapJWK:
         """
         if not isinstance(wrapjwk, WrapJWK):
             raise ObjectTypeError
-
         self.__jwk = wrapjwk
 
-
-    def encrypt(self, data: str, kid: str = None) -> str:
+    def encrypt(self, data: str | bytes, kid: str = None) -> bytes:
         """
-        Encrypt string with key
+        Encrypt string or bytes with key
 
         :param data: Secret string
         :type str:
@@ -28,7 +26,7 @@ class WrapJWE:
         :rtype str:
         :raise TypeError:
         """
-        if isinstance(data, str):
+        if isinstance(data, str) or isinstance(data, bytes):
             self.__load_keys(kid)
             # encrypt with last key
             protected = {"alg": "A128KW", "enc": "A128GCM"}
@@ -36,9 +34,9 @@ class WrapJWE:
             return jwe.encrypt_compact(protected, data, key)
         raise TypeError(f"Bad type of data.")
 
-    def decrypt(self, data: str, kid: str = None) -> str:
+    def decrypt(self, data: str, kid: str = None) -> bytes:
         """
-        Decrypt string with key
+        Decrypt string or bytes with key
 
         :param data: Secret string
         :type str:
