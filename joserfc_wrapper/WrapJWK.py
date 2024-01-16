@@ -103,14 +103,12 @@ class WrapJWK:
         self.__storage.save_keys(kid=self.__kid, keys=keys)
         self.__generated = False
 
-    def load_keys(self, kid: str = None) -> bool:
+    def load_keys(self, kid: str = None) -> None:
         """
         Load keys and counter from a storage
 
         :param kid: Unique key ID, default None
         :type str:
-        :returns bool: If the key has reached its maximum payload = False
-        :rtype bool:
         """
         self.__kid, result = self.__storage.load_keys(kid=kid)
 

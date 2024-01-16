@@ -39,3 +39,6 @@ class KeysLoadError(WrapperErrors):
     
 class CreateTokenException(WrapperErrors):
     error = "Unexpected parameter in the claims."
+
+class TokenKidInvalidError(WrapperErrors):
+    error = "Invalid KID in token."
