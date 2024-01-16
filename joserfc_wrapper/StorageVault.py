@@ -12,7 +12,7 @@ class StorageVault(AbstractKeyStorage):
     ) -> None:
         """
         Handles for HashiCorp Vault Storage
-        
+
         :param url: - by default from os.environ['VAULT_URL']
         :type str:
         :param token: - by defult from os.environ['VAULT_TOKEN']

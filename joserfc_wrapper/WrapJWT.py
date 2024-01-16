@@ -2,7 +2,11 @@ import time
 import base64
 import json
 import uuid
-from joserfc_wrapper.exceptions import ObjectTypeError, CreateTokenException, TokenKidInvalidError
+from joserfc_wrapper.exceptions import (
+    ObjectTypeError,
+    CreateTokenException,
+    TokenKidInvalidError,
+)
 from joserfc_wrapper import WrapJWK
 from joserfc.jwk import ECKey
 from joserfc.jwt import Token, JWTClaimsRegistry
@@ -24,7 +28,7 @@ class WrapJWT:
         self.__jwk = wrapjwk
 
         self.__kid = None
-    
+
     def get_kid(self) -> str:
         """Return Key ID"""
         return self.__kid
@@ -57,10 +61,7 @@ class WrapJWT:
         self.__check_claims(claims)
 
         # create header
-        headers = {
-            "alg": "ES256",
-            "kid": self.__jwk.get_kid()
-        }
+        headers = {"alg": "ES256", "kid": self.__jwk.get_kid()}
         # add actual iat to claims
         claims["iat"] = int(time.time())  # actual unix timestamp
 
@@ -96,18 +97,17 @@ class WrapJWT:
         # Correct padding if necessary
         remainder = len(input) % 4
         if remainder > 0:
-            input += '=' * (4 - remainder)
-        
+            input += "=" * (4 - remainder)
+
         # Convert from URL safe base64 format
         return base64.urlsafe_b64decode(input)
 
     def __decode_jwt(self, jwt):
-        header, payload, _ = jwt.split('.')
-        decoded_header = json.loads(self.__base64_url_decode(header).decode('utf-8'))
+        header, payload, _ = jwt.split(".")
+        decoded_header = json.loads(self.__base64_url_decode(header).decode("utf-8"))
         return decoded_header
 
     def __validate_kid(self, kid: str) -> bool:
-
         try:
             # Parse the given string as a UUID
             uuid_obj = uuid.UUID(kid)

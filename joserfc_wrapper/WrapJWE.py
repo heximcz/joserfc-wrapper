@@ -14,7 +14,7 @@ class WrapJWE:
         """
         if not isinstance(wrapjwk, WrapJWK):
             raise ObjectTypeError
-        
+
         self.__jwk = wrapjwk
 
         # load keys if not loaded
@@ -52,4 +52,3 @@ class WrapJWE:
             key = OctKey.import_key(self.__jwk.get_secret_key())
             return jwe.decrypt_compact(data, key)
         raise TypeError(f"Bad type of data")
-

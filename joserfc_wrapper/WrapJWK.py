@@ -48,7 +48,7 @@ class WrapJWK:
     def get_private_key(self) -> dict | None:
         """Return private key"""
         return self.__private
-    
+
     def get_secret_key(self) -> dict | None:
         """return secret key for encrypted content in claim"""
         return self.__secret_key
@@ -56,14 +56,14 @@ class WrapJWK:
     def get_counter(self) -> dict | None:
         """return token counter"""
         return self.__counter
-    
+
     # def set_counter(self, counter: int) -> None:
     #     self.__counter = counter
 
     def generate_keys(self) -> None:
         """
         Generate keys
-        
+
         :raises GenerateKeysError:
         :returns None:
         """
@@ -90,7 +90,7 @@ class WrapJWK:
         """Save keys"""
         if not self.__generated:
             raise KeysNotGenerated
-        
+
         # no 'data' keys here, HC Vault add this key automatically
         keys = {
             "keys": {
@@ -98,7 +98,7 @@ class WrapJWK:
                 "public": self.__public,
                 "secret": self.__secret_key,
             },
-            "counter": self.__counter
+            "counter": self.__counter,
         }
         self.__storage.save_keys(kid=self.__kid, keys=keys)
         self.__generated = False

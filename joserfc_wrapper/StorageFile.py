@@ -41,10 +41,10 @@ class StorageFile(AbstractKeyStorage):
             "data": {
                 "keys": {
                     "private": keys["keys"]["private"],
-                    "public":  keys["keys"]["public"],
-                    "secret":  keys["keys"]["secret"]
+                    "public": keys["keys"]["public"],
+                    "secret": keys["keys"]["secret"],
                 },
-                "counter": keys["keys"]["counter"]
+                "counter": keys["counter"],
             }
         }
 

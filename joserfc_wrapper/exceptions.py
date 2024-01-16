@@ -14,6 +14,7 @@ class WrapperErrors(Exception):
         message = "{}: {}".format(self.error, self.description)
         super(WrapperErrors, self).__init__(message)
 
+
 class ObjectTypeError(WrapperErrors):
     error = "Not correct object type"
 
@@ -21,6 +22,7 @@ class ObjectTypeError(WrapperErrors):
 # JWK
 class KeysNotGenerated(WrapperErrors):
     error = "Generate new or load keys first."
+
 
 class GenerateKeysError(WrapperErrors):
     error = "Error when generate new keys."
@@ -36,9 +38,11 @@ class KeysLoadError(WrapperErrors):
 
 
 # JWT
-    
+
+
 class CreateTokenException(WrapperErrors):
     error = "Unexpected parameter in the claims."
+
 
 class TokenKidInvalidError(WrapperErrors):
     error = "Invalid KID in token."
