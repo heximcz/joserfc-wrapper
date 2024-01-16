@@ -38,8 +38,6 @@ class KeysLoadError(WrapperErrors):
 
 
 # JWT
-
-
 class CreateTokenException(WrapperErrors):
     error = "Unexpected parameter in the claims."
 
