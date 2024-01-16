@@ -53,7 +53,6 @@ try:
     """ File storage """
 
     file_storage = StorageFile()
-
     myjwk = WrapJWK(storage=file_storage)
  
     # generate a new keys
@@ -90,7 +89,7 @@ except ObjectTypeError as e:
 
 ```python
 from hvac.exceptions import InvalidPath
-from joserfc.errors import InvalidClaimError
+from joserfc.errors import InvalidClaimError, BadSignatureError
 
 from joserfc_wrapper import WrapJWT, WrapJWE, WrapJWK
 
@@ -128,11 +127,15 @@ try:
 
     """ Validate token """
 
-    myjwt = WrapJWT()
-    # return extracted token object Token
-    valid_token = myjwt.decode(token=token)
-    print(valid_token.header)
-    print(valid_token.claims)
+    try:
+        myjwt = WrapJWT()
+        # return extracted token object Token
+        valid_token = myjwt.decode(token=token)
+        print(valid_token.header)
+        print(valid_token.claims)
+    except BadSignatureError as e:
+        # if keys are not for this token: BadSignatureError: bad_signature:
+        print(f"{e}")
 
     # check if claims in token is valid
     invalid_claims = {
@@ -176,7 +179,13 @@ try:
     except ValueError as e:
         print(f"{e}")
 
-    print(f"Done")
+    """ Validate token and decrypt secret data in ["sec"] """
+
+    myjwt = WrapJWT()
+    myjwe = WrapJWE(myjwk)
+    valid_token = myjwt.decode(token=token_with_sec)
+    secret_data = myjwe.decrypt(valid_token.claims["sec"], myjwt.get_kid())
+    print(f"My very secret data: {secret_data}")
 
 except InvalidPath as e:
     # create JWK first
