@@ -23,7 +23,7 @@ However, this custom class must be a subclass of the parent abstract class
 ```bash
 # Configure environment. For example in .venv/bin/activate:
 
-# env for HashiCorp Vault storage
+# env for HashiCorp Vault storage kv/v1
 export VAULT_URL="http://localhost:8200"
 export VAULT_TOKEN="<token>"
 export VAULT_MOUNT="<secret mount>"
@@ -47,7 +47,7 @@ storage = StorageVault(
 )
 ```
 
-#### Header and claims in this wraper
+#### Header and claims in this wrapper
 ```bash
 # decoded header (all created automatically)
 {
