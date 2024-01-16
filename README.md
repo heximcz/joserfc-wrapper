@@ -148,19 +148,6 @@ try:
         # invalid_claim: Invalid claim: "iss"
         print(e)
 
-    # check if claims in token is valid
-    valid_claims = {
-        "iss": "https://example.com",
-        "aud": "auditor",
-    }
-
-    try:
-        myjwt.validate(token=valid_token, valid_claims=valid_claims)
-    except InvalidClaimError as e:
-        # no error here
-        print(e)
-
-
     """ Validate invalid token (signature key not exist) """
 
     try:
@@ -249,18 +236,6 @@ try:
         myjwt.validate(token=valid_token, valid_claims=invalid_claims)
     except InvalidClaimError as e:
         # invalid_claim: Invalid claim: "iss"
-        print(e)
-
-    # check if claims in token is valid
-    valid_claims = {
-        "iss": "https://example.com",
-        "aud": "auditor",
-    }
-
-    try:
-        myjwt.validate(token=valid_token, valid_claims=valid_claims)
-    except InvalidClaimError as e:
-        # no error here
         print(e)
 
 
