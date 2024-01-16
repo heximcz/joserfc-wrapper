@@ -1,5 +1,8 @@
 ### `joserfc-wrapper` is a library for easy use of JWT and automatic management of signature keys.
 
+#### Install
+`pip install joserfc-wrapper`
+
 
 #### Reason
 
