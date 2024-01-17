@@ -1,24 +1,21 @@
-### `joserfc-wrapper` is a library for easy use of JWT and automatic management of signature keys.
+### The `joserfc-wrapper` library simplifies the use of JWT and automates the management of signature keys.
 
 #### Install
 `pip install joserfc-wrapper`
 
-
 #### Reason
 
-This wrapper's main purpose is to simplify the management of signature keys
-for generating JWT tokens and to use RFC for creating keys and tokens using
-the [joserfc](https://github.com/authlib/joserfc) library. For managing signature keys, it implements two options.
-The default option is to securely store generated keys in [HashiCorp Vault](https://github.com/hvac/hvac).
-An optional feature is then the storage of generated keys on the filesystem.
-Last but not least, it is the simple use of JWT tokens in our projects.
+The main purpose of this wrapper is to simplify the management of signature
+keys for generating JWT tokens using the [joserfc]((https://github.com/authlib/joserfc)) library and adhering to RFC
+standards. It offers two options for managing signature keys: securely storing
+generated keys in [HashiCorp Vault](https://github.com/hvac/hvac) (default) or storing them on the filesystem
+(optional).  Additionally, it facilitates the use of JWT tokens in projects.
 
+#### Need a custom solution for storing keys? We've got you covered.
 
-#### Custom key storage solution? Of course.
-The default repository for signature keys is HashiCorp Vault, but there
-is also the option to store keys in files. If neither option is
-suitable, it is possible to write your own object for manipulating
-signature keys (e.g., for storing them in a database).
+HashiCorp Vault is the default repository for signature keys. Alternatively,
+keys can be stored in files. If neither option is suitable, a custom object
+can be written to manipulate signature keys, such as storing them in a database.
 However, this custom class must be a subclass of the parent abstract class
 [AbstractKeyStorage](https://github.com/heximcz/joserfc-wrapper/blob/main/joserfc_wrapper/AbstractKeyStorage.py) to implement the required methods.
 
@@ -282,12 +279,13 @@ except FileNotFoundError as e:
 ```
 
 #### A bit of magic
-By default, you can sign an unlimited number of tokens with a single key.
-However, that doesn't sound like a good idea. Therefore, there is a bit of
-magic, and when creating tokens, you can set the payload as the maximum
-allowed number of tokens to be signed with the same key. However, it is
-necessary to keep in mind that the keys are stored and it is necessary to
-find a good compromise in setting the payload so as not to overwhelm the storage.
+By default, it is possible to sign an unlimited number of tokens
+with a single key. However, this approach may not always be appropriate.
+Instead, a more efficient solution can be implemented by setting
+the payload as the maximum number of tokens that can be signed
+with the same key, thus saving storage space. It is important to keep
+in mind that the keys are stored, so a suitable compromise must
+be found when setting the payload to avoid storage overflow.
 ```python
 """ vault storage """
 myjwt = WrapJWT()
@@ -306,10 +304,10 @@ print(f"Token: {token[:30]}...,  Length: {len(token)}bytes")
 ```
 
 #### Exceptions
-For debuging is there are a few exceptions which can be found here:
+For debugging is there are a few exceptions which can be found here:
 - [`joserfc exceptions`](https://github.com/authlib/joserfc/blob/main/src/joserfc/errors.py)
 - [`hvac exceptions`](https://hvac.readthedocs.io/en/stable/source/hvac_exceptions.html)
 - [`build-in ecxceptions`](https://github.com/heximcz/joserfc-wrapper/blob/main/joserfc_wrapper/exceptions.py)
 
 
-#### Anyone who wants to contribute to the development of this library is welcome. Ideally in the form of PR.
+#### Contributions to the development of this library are welcome, ideally in the form of a pull request.
