@@ -5,7 +5,7 @@ from joserfc_wrapper import WrapJWK
 
 
 class WrapJWE:
-    def __init__(self, wrapjwk: WrapJWK = WrapJWK()) -> None:
+    def __init__(self, wrapjwk: WrapJWK) -> None:
         """
         Encrypt and decrypt custom data
 

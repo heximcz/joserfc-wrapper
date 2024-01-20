@@ -8,14 +8,13 @@ from joserfc_wrapper import StorageVault, AbstractKeyStorage
 
 
 class WrapJWK:
-    def __init__(self, storage: AbstractKeyStorage = StorageVault()) -> None:
+    def __init__(self, storage: AbstractKeyStorage) -> None:
         """
         Handles generation, loading, and saving of private, public keys
 
         :param storage: Storage object
         :type AbstractKeyStorage:
         """
-        # define storage manager
         if not isinstance(storage, AbstractKeyStorage):
             raise ObjectTypeError
         self.__storage = storage

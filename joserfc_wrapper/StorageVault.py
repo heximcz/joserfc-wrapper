@@ -6,23 +6,25 @@ from joserfc_wrapper import AbstractKeyStorage
 class StorageVault(AbstractKeyStorage):
     def __init__(
         self,
-        url: str = os.environ["VAULT_URL"],
-        token: str = os.environ["VAULT_TOKEN"],
-        mount: str = os.environ["VAULT_MOUNT"],
+        url: str = None,
+        token: str = None,
+        mount: str = None,
     ) -> None:
         """
         Handles for HashiCorp Vault Storage
 
-        :param url: - by default from os.environ['VAULT_URL']
+        :param url: - Vault URL
         :type str:
-        :param token: - by defult from os.environ['VAULT_TOKEN']
+        :param token: - Token
         :type str:
-        :param mount: - by default from os.environ["VAULT_MOUNT"]
+        :param mount: - Vault mount point
         :type str:
         """
+        self.url = url
+        self.token = token
+        self.mount = mount
         self.__client = hvac.Client(url=url, token=token)
         self.__mount = mount
-
         # path for save last keys ID - default "last-key-id"
         self.last_id_path = "last-key-id"
 
