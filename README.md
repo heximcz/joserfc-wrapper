@@ -5,19 +5,11 @@
 
 #### Reason
 
-The main purpose of this wrapper is to simplify the management of signature
-keys for generating JWT tokens using the [joserfc]((https://github.com/authlib/joserfc)) library and adhering to RFC
-standards. It offers two options for managing signature keys: securely storing
-generated keys in [HashiCorp Vault](https://github.com/hvac/hvac) (default) or storing them on the filesystem
-(optional).  Additionally, it facilitates the use of JWT tokens in projects.
+The main purpose of this wrapper is to simplify the management of signature keys for generating JWT tokens using the [joserfc]((https://github.com/authlib/joserfc)) library and adhering to RFC standards. It offers two options for managing signature keys: securely storing generated keys in [HashiCorp Vault](https://github.com/hvac/hvac) (default) or storing them on the filesystem (optional).  Additionally, it facilitates the use of JWT tokens in projects.
 
 #### Need a custom solution for storing keys? We've got you covered.
 
-~~HashiCorp Vault is the default~~ repository for signature keys. Alternatively,
-keys can be stored in files. If neither option is suitable, a custom object
-can be written to manipulate signature keys, such as storing them in a database.
-However, this custom class must be a subclass of the parent abstract class
-[AbstractKeyStorage](https://github.com/heximcz/joserfc-wrapper/blob/main/joserfc_wrapper/AbstractKeyStorage.py) to implement the required methods.
+If necessary, a custom object can be created to manage signing keys, including storing them in a database. However, this custom class must be a subclass of the parent [AbstractKeyStorage](https://github.com/heximcz/joserfc-wrapper/blob/main/joserfc_wrapper/AbstractKeyStorage.py) abstract class to implement the necessary methods.
 
 #### Configuration
 
@@ -90,15 +82,12 @@ claims = {
 
 try:
     """ Create token """
-
     myjwt = WrapJWT(wrapjwk=myjwk)
     # only the last generated key is always used to create a new token
     token = myjwt.create(claims=claims)
     print(f"Token: {token[:20]}...,  Length: {len(token)}bytes")
 
-
     """ Create token with encrypted data """
-
     myjwe = WrapJWE(wrapjwk=myjwk)
     secret_data = "very secret text"
     secret_data_bytes = b"very secrets bytes"
@@ -108,9 +97,7 @@ try:
     token_with_sec = myjwt.create(claims=claims)
     print(f"Token: {token_with_sec[:20]}..., Length: {len(token_with_sec)}bytes")
 
-
     """ Validate token """
-
     try:
         myjwt = WrapJWT(wrapjwk=myjwk)
         # return extracted token object Token
@@ -133,7 +120,6 @@ try:
         print(e)
 
     """ Validate invalid token (signature key not exist) """
-
     try:
         token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiIsImtpZCI6IjM5MTkxZDUyM2Q4MTQ3NTZiYTgxMWNmZWFjODY0YjNjIn0.eyJpc3MiOiJodHRwczovL2V4YW1wbGUuY29tIiwiYXVkIjoiYXVkaXRvciIsInVpZCI6MTIzLCJpYXQiOjE3MDUyNzc3OTR9.r7uflHLnSIMxhma0eU_A7hRupL3ZDUjXGgSMprOmWdDzMh1TRDFxW8CPzOhnVDZLfPeyjjt4KYn6jPT2W2E9jg"
         myjwt = WrapJWT(wrapjwk=myjwk)
@@ -142,9 +128,7 @@ try:
     except InvalidPath as e:
         print(f"{e}")
 
-
     """ Validate fake token """
-
     try:
         token = "faketoken"
         myjwt = WrapJWT(wrapjwk=myjwk)
@@ -153,9 +137,7 @@ try:
     except ValueError as e:
         print(f"{e}")
 
-
     """ Validate token and decrypt secret data """
-
     myjwt = WrapJWT(wrapjwk=myjwk)
     myjwe = WrapJWE(wrapjwk=myjwk)
     valid_token = myjwt.decode(token=token_with_sec)
@@ -165,8 +147,6 @@ try:
     print(f"[sec]: {secret_data}")
     print(f"[sec_bytes]: {secret_data_bytes}")
 
-    print(f"Done")
-
 except InvalidPath as e:
     # create JWK first
     print(f"Invalid path because key not exist in the storage.")
@@ -174,13 +154,8 @@ except InvalidPath as e:
 ```
 
 #### A bit of magic
-By default, it is possible to sign an unlimited number of tokens
-with a single key. However, this approach may not always be appropriate.
-Instead, a more efficient solution can be implemented by setting
-the payload as the maximum number of tokens that can be signed
-with the same key, thus saving storage space. It is important to keep
-in mind that the keys are stored, so a suitable compromise must
-be found when setting the payload to avoid storage overflow.
+By default, it is possible to sign an unlimited number of tokens with a single key. However, this approach may not always be appropriate. Instead, a more efficient solution can be implemented by setting the payload as the maximum number of tokens that can be signed with the same key, thus saving storage space. It is important to keep in mind that the keys are stored, so a suitable compromise must be found when setting the payload to avoid storage overflow.
+
 ```python
 """ payload """
 token = myjwt.create(claims=claims, payload=10)
