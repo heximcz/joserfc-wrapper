@@ -2,20 +2,19 @@ import time
 import base64
 import json
 import uuid
+from joserfc.errors import MissingClaimError
 from joserfc_wrapper.exceptions import (
     ObjectTypeError,
     CreateTokenException,
     TokenKidInvalidError,
 )
 from joserfc_wrapper import WrapJWK
+from joserfc import jwt
 from joserfc.jwk import ECKey
 from joserfc.jwt import Token, JWTClaimsRegistry
 
-from joserfc import jwt
-
-
 class WrapJWT:
-    def __init__(self, wrapjwk: WrapJWK = WrapJWK()) -> None:
+    def __init__(self, wrapjwk: WrapJWK) -> None:
         """
         Handles for JWT
 
@@ -32,17 +31,38 @@ class WrapJWT:
         return self.__kid
 
     def decode(self, token: str) -> Token:
-        """Decode token"""
+        """
+        Decode token
+
+        :param token: Token to decode
+        :type str:
+        :returns: object
+        :rtype Token:
+        :raise TokenKidInvalidError:
+
+        """
         if self.__load_keys_decode(token):
             key = ECKey.import_key(self.__jwk.get_private_key())
             return jwt.decode(token, key)
         raise TokenKidInvalidError
 
-    def validate(self, token: Token, valid_claims: dict) -> bool:
-        """Validate claims"""
-        claims_for_registry = {k: {"value": v} for k, v in valid_claims.items()}
-        reg = JWTClaimsRegistry(**claims_for_registry)
-        reg.validate(token.claims)
+    def validate(self, token: Token, claims: dict) -> bool:
+        """
+        Validate claims
+
+        :param token: Validated token (call this after decode)
+        :type str:
+        :param claims: Claims keys to must be equal in token
+        :type dict:
+        :returns bool:
+        """
+        try:
+            claims_for_registry = {k: {"value": v} for k, v in claims.items()}
+            reg = JWTClaimsRegistry(**claims_for_registry)
+            reg.validate(token.claims)
+            return True
+        except MissingClaimError:
+            return False
 
     def create(self, claims: dict, payload: int = 0) -> str:
         # TODO: Counter
