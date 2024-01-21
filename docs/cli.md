@@ -4,9 +4,10 @@ The library includes a key and token generator for creating new signature keys a
 
 ### Show help
 ```bash
-genjw keys --help
-genjw token --help
-genjw check --help
+genjw --help
+genjw keys --help [--storage=file]
+genjw token --help [--storage=file]
+genjw check --help [--storage=file]
 ```
 
 ### Vault storage
@@ -88,4 +89,13 @@ When generating the token, you can set the `--payload` switch to a value higher 
 
 ```bash
 genjw token --iss="https//example.tld" --aud="auditor" --uid=123 --payload=10
+```
+
+### Errors
+
+Exceptions are listed in the following format: `exception name` : `error`. For instance:
+```bash
+Invalid: BadSignatureError : bad_signature:
+# or
+Invalid: InvalidClaimError : invalid_claim: Invalid claim: "iss"
 ```

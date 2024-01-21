@@ -5,7 +5,6 @@ import fire
 import datetime
 from datetime import timezone
 from joserfc_wrapper import StorageVault, StorageFile, WrapJWK, WrapJWT
-from joserfc_wrapper.exceptions import CreateTokenException
 
 
 class generate_jwt_tokens:
@@ -18,30 +17,36 @@ class generate_jwt_tokens:
         if storage == "vault":
             vars = ["VAULT_ADDR", "VAULT_TOKEN", "VAULT_MOUNT"]
             if not all(var in os.environ for var in vars):
-                print(f"Missing var(s) in environment: {' or '.join(vars)}.")
+                print(
+                    f"Missing var(s) in environment for 'vault' storage: {' or '.join(vars)}."
+                )
                 sys.exit(1)
-            self.vault_addr = os.environ["VAULT_ADDR"]
-            self.vault_token = os.environ["VAULT_TOKEN"]
-            self.vault_mount = os.environ["VAULT_MOUNT"]
+            self.__vault_addr = os.environ["VAULT_ADDR"]
+            self.__vault_token = os.environ["VAULT_TOKEN"]
+            self.__vault_mount = os.environ["VAULT_MOUNT"]
         elif storage == "file":
             var = os.environ.get("CERT_DIR")
             if var is None:
-                print("Missing var in environment: CERT_DIR")
+                print("Missing var in environment for 'file' storage: CERT_DIR")
                 sys.exit(1)
-            self.cert_dir = os.environ["CERT_DIR"]
+            self.__cert_dir = os.environ["CERT_DIR"]
         else:
             print("Allowed value is: --storage='vault' (default) or 'file'")
             sys.exit(1)
 
         # create storage object
-        if self.storage == "vault":
-            self.wjwk = WrapJWK(
-                StorageVault(self.vault_addr, self.vault_token, self.vault_mount)
-            )
-        elif self.storage == "file":
-            if not os.path.exists(self.cert_dir):
-                return f"Error: directory {self.cert_dir} not exist."
-            self.wjwk = WrapJWK(StorageFile(self.cert_dir))
+        try:
+            if self.storage == "vault":
+                storage = StorageVault(
+                    self.__vault_addr, self.__vault_token, self.__vault_mount
+                )
+                self.__wjwk = WrapJWK(storage)
+            elif self.storage == "file":
+                if not os.path.exists(self.__cert_dir):
+                    return f"Error: directory {self.__cert_dir} not exist."
+                self.__wjwk = WrapJWK(StorageFile(self.__cert_dir))
+        except Exception as e:
+            return f"Error: {type(e).__name__} : {str(e)}"
 
     def token(
         self,
@@ -105,7 +110,7 @@ class generate_jwt_tokens:
 
         # ok do token
         try:
-            wjwt = WrapJWT(self.wjwk)
+            wjwt = WrapJWT(self.__wjwk)
             if payload:
                 if not isinstance(payload, int):
                     return f"Error: --payload must be a int."
@@ -113,8 +118,8 @@ class generate_jwt_tokens:
                     return wjwt.create(claims=claims, payload=payload)
             else:
                 return wjwt.create(claims=claims)
-        except CreateTokenException as e:
-            return f"Error: {str(e)}"
+        except Exception as e:
+            return f"Error: {type(e).__name__} : {str(e)}"
 
     def keys(self) -> None:
         """
@@ -122,11 +127,11 @@ class generate_jwt_tokens:
         """
         try:
             # create new keys
-            self.wjwk.generate_keys()
-            self.wjwk.save_keys()
-            return f"New keys has been saved in '{self.storage}' storage with KID: '{self.wjwk.get_kid()}'."
+            self.__wjwk.generate_keys()
+            self.__wjwk.save_keys()
+            return f"New keys has been saved in '{self.storage}' storage with KID: '{self.__wjwk.get_kid()}'."
         except Exception as e:
-            return f"Error: {type(e).__name__} : {e}"
+            return f"Error: {type(e).__name__} : {str(e)}"
 
     def check(self, iss: str, aud: str, token: str) -> None:
         """
@@ -144,12 +149,12 @@ class generate_jwt_tokens:
         }
 
         try:
-            wjwt = WrapJWT(self.wjwk)
+            wjwt = WrapJWT(self.__wjwk)
             token = wjwt.decode(token=token)
             if wjwt.validate(token=token, claims=claims):
                 return f"Token is valid."
         except Exception as e:
-            return f"Invalid: {e}"
+            return f"Invalid: {type(e).__name__} : {str(e)}"
 
 
 def run():

@@ -1,15 +1,8 @@
-### The `joserfc-wrapper` library simplifies the use of JWT and automates the management of signature keys.
+### Documentation 
 
-#### Install
-`pip install joserfc-wrapper`
+#### CLI
 
-#### Reason
-
-The main purpose of this wrapper is to simplify the management of signature keys for generating JWT tokens using the [joserfc]((https://github.com/authlib/joserfc)) library and adhering to RFC standards. It offers two options for managing signature keys: securely storing generated keys in [HashiCorp Vault](https://github.com/hvac/hvac) (default) or storing them on the filesystem (optional).  Additionally, it facilitates the use of JWT tokens in projects.
-
-#### Need a custom solution for storing keys? We've got you covered.
-
-If necessary, a custom object can be created to manage signing keys, including storing them in a database. However, this custom class must be a subclass of the parent [AbstractKeyStorage](https://github.com/heximcz/joserfc-wrapper/blob/main/joserfc_wrapper/AbstractKeyStorage.py) abstract class to implement the necessary methods.
+[Documentation for the CLI](cli.md)
 
 #### Configuration
 
@@ -161,10 +154,6 @@ By default, it is possible to sign an unlimited number of tokens with a single k
 token = myjwt.create(claims=claims, payload=10)
 print(f"Token: {token[:30]}...,  Length: {len(token)}bytes")
 ```
-
-#### CLI
-
-[Documentation for the CLI.](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/cli.md)
 
 #### Exceptions
 For debugging is there are a few exceptions which can be found here:
