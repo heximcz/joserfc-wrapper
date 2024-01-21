@@ -14,13 +14,13 @@ If necessary, a custom object can be created to manage signing keys, including s
 #### Using a Virtual Environment for `joserfc_wrapper`
 We recommend running joserfc_wrapper in a virtual environment for the following reasons:
 
-- Project Isolation: A virtual environment isolates this project's dependencies from the rest of your system. This means you can work with specific library versions needed for joserfc_wrapper without the risk of conflicts with other projects.
+- Project Isolation: A virtual environment isolates this project's dependencies from the rest of your system. This allows you to work with specific library versions required for joserfc_wrapper without the risk of conflicts with other projects.
 
-- Easy Dependency Management: A virtual environment facilitates the management and tracking of your project's dependencies, crucial for reproducibility and consistency in development.
+- Virtual environments make it easy to manage and track project dependencies, which is crucial for ensuring reproducibility and consistency in development.
 
-- Seamless Integration and Deployment: Using a virtual environment ensures that your project will operate consistently across all development and production environments.
+- Using a virtual environment ensures seamless integration and deployment, guaranteeing consistent operation across all development and production environments.
 
-To set up a virtual environment for joserfc_wrapper, follow these steps:
+To create a virtual environment for joserfc_wrapper, follow these steps:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -28,8 +28,14 @@ pip install -r requirements.txt
 # or
 pip install joserfc_wrapper
 ```
-By doing this, you ensure a smooth and problem-free experience working with `joserfc_wrapper`.
+By following these guidelines, you can ensure a smooth and problem-free experience when working with `joserfc_wrapper`.
 
 #### [Documentation](./docs/index.md)
+
+### License
+
+[joserfc](https://github.com/authlib/joserfc?tab=readme-ov-file#license) (BSD-3)
+
+[joserfc_wrapper](./LICENSE) (MIT)
 
 #### Contributions to the development of this library are welcome, ideally in the form of a pull request.

@@ -1,4 +1,4 @@
-# CLI
+# Documentation for CLI
 
 The library includes a key and token generator for creating new signature keys and tokens or verifying existing ones.
 
@@ -99,3 +99,6 @@ Invalid: BadSignatureError : bad_signature:
 # or
 Invalid: InvalidClaimError : invalid_claim: Invalid claim: "iss"
 ```
+
+[back to index](index.md)
+
