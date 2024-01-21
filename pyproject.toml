@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "joserfc-wrapper"
-version = "0.1.9.dev0"
+version = "0.1.9.dev1"
 description = "joserfc-wrapper is a library for easy use of JWT and automatic management of signature keys."
 authors = ["Lubomir Spacek <hexim@hexim.cz>"]
 readme = "README.md"
@@ -24,6 +24,9 @@ tox = "^4.12.0"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+genjw = "joserfc_wrapper.cli.genjw:run"
 
 [tool.poetry.urls]
 "Homepage" = "https://github.com/heximcz/joserfc-wrapper"

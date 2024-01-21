@@ -166,7 +166,6 @@ print(f"Token: {token[:30]}...,  Length: {len(token)}bytes")
 
 [Documentation for the CLI.](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/cli.md)
 
-
 #### Exceptions
 For debugging is there are a few exceptions which can be found here:
 - [`joserfc exceptions`](https://github.com/authlib/joserfc/blob/main/src/joserfc/errors.py)
