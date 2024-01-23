@@ -24,8 +24,6 @@ To create a virtual environment for joserfc_wrapper, follow these steps:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-# or
 pip install joserfc_wrapper
 ```
 By following these guidelines, you can ensure a smooth and problem-free experience when working with `joserfc_wrapper`.
