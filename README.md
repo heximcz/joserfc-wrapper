@@ -30,7 +30,7 @@ pip install joserfc_wrapper
 ```
 By following these guidelines, you can ensure a smooth and problem-free experience when working with `joserfc_wrapper`.
 
-#### [Documentation](./docs/index.md)
+#### [Documentation](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md)
 
 ### License
 

@@ -10,7 +10,7 @@ genjw token --help [--storage=file]
 genjw check --help [--storage=file]
 ```
 
-### Vault storage
+## Vault storage
 
 Configure environment
 
@@ -49,7 +49,7 @@ genjw check --iss="https//example.tld" --aud="auditor" --token="eyJ0eXAiOiJKV1Qi
 # Token is valid.
 ```
 
-### File storage
+## File storage
 
 Configure environment
 
@@ -83,7 +83,7 @@ genjw check --iss="https//example.tld" --aud="auditor" --token="eyJ0eXAiOiJKV1Qi
 # Token is valid.
 ```
 
-### Using payload switch
+## Using payload switch
 
 When generating the token, you can set the `--payload` switch to a value higher than zero. This will check how many times the signature key was used to sign the token. If the value limit is exceeded, a new signature key will be automatically generated to sign a new token. This feature enhances security by ensuring that if the given signature key is leaked or compromised, only a certain portion of the token will be affected.
 
@@ -100,5 +100,5 @@ Invalid: BadSignatureError : bad_signature:
 Invalid: InvalidClaimError : invalid_claim: Invalid claim: "iss"
 ```
 
-[back to index](index.md)
+[< back to index](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md)
 
