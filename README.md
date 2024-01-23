@@ -5,7 +5,7 @@
 
 #### Reason
 
-The main purpose of this wrapper is to simplify the management of signature keys for generating JWT tokens using the [joserfc]((https://github.com/authlib/joserfc)) library and adhering to RFC standards. It offers two options for managing signature keys: securely storing generated keys in [HashiCorp Vault](https://github.com/hvac/hvac) (default) or storing them on the filesystem (optional).  Additionally, it facilitates the use of JWT tokens in projects.
+The main purpose of this wrapper is to simplify the management of signature keys for generating JWT tokens using the [joserfc]((https://github.com/authlib/joserfc)) library and adhering to RFC standards. It offers two options for managing signature keys: securely storing generated keys in [HashiCorp Vault](https://github.com/hvac/hvac) or storing them on the filesystem. Additionally, it facilitates the use of JWT tokens in projects.
 
 #### Need a custom solution for storing keys? We've got you covered.
 
