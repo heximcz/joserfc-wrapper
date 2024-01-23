@@ -61,7 +61,7 @@ Create first keys
 
 ```bash
 genjw keys --storage=file
-# New keys has been saved in 'vault' storage with KID: '1b55900ca454c0...'.
+# New keys has been saved in 'vault' storage with KID: 'eyJ0eXAiOiJKV1QiLCJhbGc...'.
 ```
 
 Create JWT token
