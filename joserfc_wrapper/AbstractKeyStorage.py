@@ -1,10 +1,9 @@
+""" Storage interface """
 from abc import ABC, abstractmethod
 
 
 class AbstractKeyStorage(ABC):
-    """
-    Abstract for keys storage
-    """
+    """Abstract methods for keys storage"""
 
     @abstractmethod
     def get_last_kid(self) -> str:
@@ -22,7 +21,8 @@ class AbstractKeyStorage(ABC):
         """
         Load keys from a storage
 
-        The implementation of this abstract method should include a call methods 'get_last_kid' defined in this class.
+        The implementation of this abstract method should include
+        a call methods 'get_last_kid' defined in this class.
 
         For example:
         def load_keys(self, kid: str):

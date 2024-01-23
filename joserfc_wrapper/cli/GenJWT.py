@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+""" generate jwt for cli """
 import os
 import sys
 import fire
@@ -7,18 +8,17 @@ from datetime import timezone
 from joserfc_wrapper import StorageVault, StorageFile, WrapJWK, WrapJWT
 
 
-class generate_jwt_tokens:
-    """
-    Generate JWT
-    """
+class GenerateJWT:
+    """ Generate JWT """
 
     def __init__(self, storage: str = "vault") -> None:
         self.storage = storage
         if storage == "vault":
-            vars = ["VAULT_ADDR", "VAULT_TOKEN", "VAULT_MOUNT"]
-            if not all(var in os.environ for var in vars):
+            env_vars = ["VAULT_ADDR", "VAULT_TOKEN", "VAULT_MOUNT"]
+            if not all(var in os.environ for var in env_vars):
                 print(
-                    f"Missing var(s) in environment for 'vault' storage: {' or '.join(vars)}."
+                    f"Missing var(s) in environment for 'vault' storage: "
+                    f"{' or '.join(env_vars)}."
                 )
                 sys.exit(1)
             self.__vault_addr = os.environ["VAULT_ADDR"]
@@ -43,10 +43,12 @@ class generate_jwt_tokens:
                 self.__wjwk = WrapJWK(storage)
             elif self.storage == "file":
                 if not os.path.exists(self.__cert_dir):
-                    return f"Error: directory {self.__cert_dir} not exist."
+                    print(f"Error: directory {self.__cert_dir} not exist.")
+                    sys.exit(1)
                 self.__wjwk = WrapJWK(StorageFile(self.__cert_dir))
-        except Exception as e:
-            return f"Error: {type(e).__name__} : {str(e)}"
+        except Exception as e: # pylint: disable=W0718
+            print(f"Error: {type(e).__name__} : {str(e)}")
+            sys.exit(1)
 
     def token(
         self,
@@ -57,6 +59,7 @@ class generate_jwt_tokens:
         custom: dict = None,
         payload: int = 0,
     ) -> None:
+        # pylint: disable=C0301
         """
         Create new JWT token.
 
@@ -84,7 +87,7 @@ class generate_jwt_tokens:
         # add expiration if exist
         if exp:
             # check format
-            if not ("=" in exp):
+            if not "=" in exp:
                 return f"Error: --exp={exp} bad format."
             parts = exp.split("=")
             valid_units = {"seconds", "minutes", "days", "hours", "weeks"}
@@ -92,18 +95,18 @@ class generate_jwt_tokens:
             if not parts[0] in valid_units:
                 return f'Error: "{parts[0]}" in --exp is not in valid units: {valid_units}.'
             # check neno zero value
-            if not int(parts[1]) > 0:
+            if int(parts[1]) <= 0:
                 return f"Error: --exp={exp} value must be greater zero."
             # Compute expiration and add to claims
             kwargs = {parts[0]: int(parts[1])}
-            claims["exp"] = datetime.datetime.now(tz=timezone.utc) + datetime.timedelta(
-                **kwargs
-            )
+            claims["exp"] = datetime.datetime.now(
+                tz=timezone.utc
+            ) + datetime.timedelta(**kwargs)
 
         # add custom to claims if exist and is dict
         if custom:
             if not isinstance(custom, dict):
-                return f"Error: --custom must be a dict."
+                return "Error: --custom must be a 'dict'."
             for key, value in custom.items():
                 if key not in claims:
                     claims[key] = value
@@ -113,12 +116,12 @@ class generate_jwt_tokens:
             wjwt = WrapJWT(self.__wjwk)
             if payload:
                 if not isinstance(payload, int):
-                    return f"Error: --payload must be a int."
+                    return "Error: --payload must be a 'int'."
                 if payload > 0:
                     return wjwt.create(claims=claims, payload=payload)
             else:
                 return wjwt.create(claims=claims)
-        except Exception as e:
+        except Exception as e: # pylint: disable=W0718
             return f"Error: {type(e).__name__} : {str(e)}"
 
     def keys(self) -> None:
@@ -129,8 +132,11 @@ class generate_jwt_tokens:
             # create new keys
             self.__wjwk.generate_keys()
             self.__wjwk.save_keys()
-            return f"New keys has been saved in '{self.storage}' storage with KID: '{self.__wjwk.get_kid()}'."
-        except Exception as e:
+            return (
+                f"New keys has been saved in '{self.storage}' "
+                f"storage with KID: '{self.__wjwk.get_kid()}'."
+            )
+        except Exception as e: # pylint: disable=W0718
             return f"Error: {type(e).__name__} : {str(e)}"
 
     def check(self, iss: str, aud: str, token: str) -> None:
@@ -152,13 +158,13 @@ class generate_jwt_tokens:
             wjwt = WrapJWT(self.__wjwk)
             token = wjwt.decode(token=token)
             if wjwt.validate(token=token, claims=claims):
-                return f"Token is valid."
-        except Exception as e:
+                return "Token is valid."
+        except Exception as e: # pylint: disable=W0718
             return f"Invalid: {type(e).__name__} : {str(e)}"
 
 
 def run():
-    fire.Fire(generate_jwt_tokens)
+    fire.Fire(GenerateJWT)
 
 
 if __name__ == "__main__":

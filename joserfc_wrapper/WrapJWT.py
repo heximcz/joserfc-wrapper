@@ -1,23 +1,26 @@
+""" joserfc jwt wrapper """
 import time
 import base64
 import json
 import uuid
-from joserfc.errors import MissingClaimError
-from joserfc_wrapper.exceptions import (
+from joserfc_wrapper.Exceptions import (
     ObjectTypeError,
     CreateTokenException,
     TokenKidInvalidError,
 )
 from joserfc_wrapper import WrapJWK
+
 from joserfc import jwt
+from joserfc.errors import MissingClaimError
 from joserfc.jwk import ECKey
 from joserfc.jwt import Token, JWTClaimsRegistry
 
+
 class WrapJWT:
+    """Handles for JWT"""
+
     def __init__(self, wrapjwk: WrapJWK) -> None:
         """
-        Handles for JWT
-
         :param wrapjwk: for non vault storage
         :type WrapJWK:
         """
@@ -65,15 +68,14 @@ class WrapJWT:
             return False
 
     def create(self, claims: dict, payload: int = 0) -> str:
-        # TODO: Counter
         """
         Create a JWT Token with claims and signed with existing key.
 
         :param claims:
         :type dict:
-        :param payload: 0 = unlimited. In case it is set, it checks how many times the key
-          has been used for signing tokens. If the value is exceeded,
-          a new key is automatically generated.
+        :param payload: 0 = unlimited. In case it is set, it checks how many
+            times the key has been used for signing tokens. If the value
+            is exceeded, a new key is automatically generated.
         :type int:
         :raises CreateTokenException:
         :returns: jwt token
@@ -103,10 +105,9 @@ class WrapJWT:
 
         return token
 
-
     def __check_claims(self, claims: dict) -> None | CreateTokenException:
         """
-        Checks if the claim contains all required keys with valid types.
+        Checks if the claims contains all required keys with valid types.
 
         :param claims:
         :type dict:
@@ -122,11 +123,13 @@ class WrapJWT:
         for key, expected_type in required_keys.items():
             if key not in claims:
                 raise CreateTokenException(
-                    f"Missing required payload argument: '{key}'."
+                    f"Missing required claims argument: '{key}'."
                 )
             if not isinstance(claims[key], expected_type):
                 raise CreateTokenException(
-                    f"Incorrect type for payload argument '{key}': Expected {expected_type.__name__}, got {type(claims[key]).__name__}."
+                    f"Incorrect type for claims argument '{key}': "
+                    f"Expected '{expected_type.__name__}', "
+                    f"got '{type(claims[key]).__name__}'."
                 )
 
     def __load_keys(self, kid: str = None) -> None:
@@ -144,7 +147,9 @@ class WrapJWT:
     def __decode_jwt(self, token: str) -> str:
         """Decode token for get KID"""
         header, _, _ = token.split(".")
-        decoded_header = json.loads(self.__base64_url_decode(header).decode("utf-8"))
+        decoded_header = json.loads(
+            self.__base64_url_decode(header).decode("utf-8")
+        )
         return decoded_header
 
     def __validate_kid(self, kid: str) -> bool:

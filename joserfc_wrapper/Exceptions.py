@@ -1,3 +1,4 @@
+""" joserfc_wrapper exceptions """
 from typing import Optional
 
 
@@ -11,7 +12,7 @@ class WrapperErrors(Exception):
         if description is not None:
             self.description = description
 
-        message = "{}: {}".format(self.error, self.description)
+        message = f"{self.error}: {self.description}"
         super(WrapperErrors, self).__init__(message)
 
 

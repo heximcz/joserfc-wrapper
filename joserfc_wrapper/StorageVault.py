@@ -1,9 +1,11 @@
-import os
+""" vault manipulation class """
 import hvac
 from joserfc_wrapper import AbstractKeyStorage
 
 
 class StorageVault(AbstractKeyStorage):
+    """interface for saving and loading a key on the HashiCorp Vault system"""
+
     def __init__(
         self,
         url: str = None,

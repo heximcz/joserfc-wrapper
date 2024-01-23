@@ -1,17 +1,18 @@
+""" joserfc jwk wrapper """
 import uuid
 from joserfc.jwk import ECKey, OctKey
-from joserfc_wrapper.exceptions import (
+from joserfc_wrapper.Exceptions import (
     GenerateKeysError,
     ObjectTypeError,
 )
-from joserfc_wrapper import StorageVault, AbstractKeyStorage
+from joserfc_wrapper import AbstractKeyStorage
 
 
 class WrapJWK:
+    """Handles generation, loading, and saving of private, public keys"""
+
     def __init__(self, storage: AbstractKeyStorage) -> None:
         """
-        Handles generation, loading, and saving of private, public keys
-
         :param storage: Storage object
         :type AbstractKeyStorage:
         """
@@ -51,14 +52,11 @@ class WrapJWK:
     def get_counter(self) -> dict | None:
         """return token counter"""
         return self.__counter
-    
+
     def increase_counter(self) -> None:
         """Key Counter plus one"""
         if self.__counter is not None:
             self.__counter += 1
-
-    # def set_counter(self, counter: int) -> None:
-    #     self.__counter = counter
 
     def generate_keys(self) -> None:
         """
@@ -82,8 +80,8 @@ class WrapJWK:
             # New keys have a zero counter
             self.__counter = 0
 
-        except Exception:
-            raise GenerateKeysError
+        except Exception as e:
+            raise GenerateKeysError from e
 
     def save_keys(self):
         """Save keys"""

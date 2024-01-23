@@ -1,3 +1,4 @@
+""" file manipulation class """
 import os
 import re
 import json
@@ -5,9 +6,11 @@ from joserfc_wrapper import AbstractKeyStorage
 
 
 class StorageFile(AbstractKeyStorage):
+    """interface for saving and loading a key on the file system"""
+
     def __init__(self, cert_dir: str) -> None:
         """
-        :param cert_dir: - path to the directory where the certificates are stored
+        :param cert_dir: - path to the directory with certificates
         :type str:
         """
         self.__cert_dir = cert_dir
@@ -49,14 +52,14 @@ class StorageFile(AbstractKeyStorage):
 
         # Save the public and private key to a files
         keys_path = os.path.join(self.__cert_dir, f"{kid}.json")
-        with open(keys_path, "w") as f:
+        with open(keys_path, "w", encoding="utf-8") as f:
             json.dump(keys, f)
 
     def __load_key_files(self, kid: str) -> dict:
         """Loads key files from the specified directory"""
 
         keys_path = os.path.join(self.__cert_dir, f"{kid}.json")
-        with open(keys_path, "r") as f:
+        with open(keys_path, "r", encoding="utf-8") as f:
             keys = json.load(f)
 
         return keys

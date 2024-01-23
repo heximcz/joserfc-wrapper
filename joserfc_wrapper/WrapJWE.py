@@ -1,14 +1,15 @@
+""" joserfc jwe wrapper """
 from joserfc import jwe
 from joserfc.jwk import OctKey
-from joserfc_wrapper.exceptions import ObjectTypeError
+from joserfc_wrapper.Exceptions import ObjectTypeError
 from joserfc_wrapper import WrapJWK
 
 
 class WrapJWE:
+    """Encrypt and decrypt custom data"""
+
     def __init__(self, wrapjwk: WrapJWK) -> None:
         """
-        Encrypt and decrypt custom data
-
         :param wrapjwk: for non vault storage
         :type WrapJWK:
         """
@@ -32,7 +33,7 @@ class WrapJWE:
             protected = {"alg": "A128KW", "enc": "A128GCM"}
             key = OctKey.import_key(self.__jwk.get_secret_key())
             return jwe.encrypt_compact(protected, data, key)
-        raise TypeError(f"Bad type of data.")
+        raise TypeError("Bad type of data.")
 
     def decrypt(self, data: str, kid: str = None) -> bytes:
         """
@@ -48,7 +49,7 @@ class WrapJWE:
             self.__load_keys(kid)
             key = OctKey.import_key(self.__jwk.get_secret_key())
             return jwe.decrypt_compact(data, key).plaintext
-        raise TypeError(f"Bad type of data")
+        raise TypeError("Bad type of data")
 
     def __load_keys(self, kid: str) -> None:
         # load keys if not loaded
