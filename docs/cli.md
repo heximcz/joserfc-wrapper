@@ -50,7 +50,7 @@ genjw check --iss="https//example.tld" --aud="auditor" --token="eyJ0eXAiOiJKV1Qi
 # Token is valid.
 ```
 
-Show headers and claims
+Show header and claims
 
 ```bash
 genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..."
@@ -94,7 +94,7 @@ genjw check --iss="https//example.tld" --aud="auditor" --token="eyJ0eXAiOiJKV1Qi
 # Token is valid.
 ```
 
-Show headers and claims
+Show header and claims
 
 ```bash
 genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --storage=file
