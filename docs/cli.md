@@ -8,6 +8,7 @@ genjw --help
 genjw keys --help [--storage=file]
 genjw token --help [--storage=file]
 genjw check --help [--storage=file]
+genjw show --help [--storage=file]
 ```
 
 ## Vault storage
@@ -49,6 +50,16 @@ genjw check --iss="https//example.tld" --aud="auditor" --token="eyJ0eXAiOiJKV1Qi
 # Token is valid.
 ```
 
+Show headers and claims
+
+```bash
+genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..."
+genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --headers=True
+# output
+# Header: {'typ': 'JWT', 'alg': 'ES256', 'kid': '8cb0...'}
+# Claims: {'iss': 'https//example.tld', 'aud': 'auditor', 'uid': 123, 'iat': 170...}
+```
+
 ## File storage
 
 Configure environment
@@ -81,6 +92,16 @@ Validate JWT token
 genjw check --iss="https//example.tld" --aud="auditor" --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --storage=file
 # output
 # Token is valid.
+```
+
+Show headers and claims
+
+```bash
+genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --storage=file
+genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --headers=True --storage=file
+# output
+# Header: {'typ': 'JWT', 'alg': 'ES256', 'kid': '8cb0...'}
+# Claims: {'iss': 'https//example.tld', 'aud': 'auditor', 'uid': 123, 'iat': 170...}
 ```
 
 ## Using payload switch
