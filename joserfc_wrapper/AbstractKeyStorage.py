@@ -17,7 +17,7 @@ class AbstractKeyStorage(ABC):
         pass
 
     @abstractmethod
-    def load_keys(self, kid: str = None) -> tuple[str, dict]:
+    def load_keys(self, kid: str = "") -> tuple[str, dict]:
         """
         Load keys from a storage
 
@@ -26,7 +26,7 @@ class AbstractKeyStorage(ABC):
 
         For example:
         def load_keys(self, kid: str):
-            if not kid:
+            if kid == "":
                 kid = self.get_last_kid()
             # More logic...
 

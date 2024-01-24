@@ -5,11 +5,13 @@ import sys
 import fire
 import datetime
 from datetime import timezone
+from typing import Optional, Dict, Any
 from joserfc_wrapper import StorageVault, StorageFile, WrapJWK, WrapJWT
+from joserfc.jwt import Token
 
 
 class GenerateJWT:
-    """ Generate JWT """
+    """Generate JWT"""
 
     def __init__(self, storage: str = "vault") -> None:
         self.storage = storage
@@ -37,16 +39,16 @@ class GenerateJWT:
         # create storage object
         try:
             if self.storage == "vault":
-                storage = StorageVault(
+                vault = StorageVault(
                     self.__vault_addr, self.__vault_token, self.__vault_mount
                 )
-                self.__wjwk = WrapJWK(storage)
+                self.__wjwk = WrapJWK(vault)
             elif self.storage == "file":
                 if not os.path.exists(self.__cert_dir):
                     print(f"Error: directory {self.__cert_dir} not exist.")
                     sys.exit(1)
                 self.__wjwk = WrapJWK(StorageFile(self.__cert_dir))
-        except Exception as e: # pylint: disable=W0718
+        except Exception as e:  # pylint: disable=W0718
             print(f"Error: {type(e).__name__} : {str(e)}")
             sys.exit(1)
 
@@ -55,16 +57,15 @@ class GenerateJWT:
         iss: str,
         aud: str,
         uid: int,
-        exp: str = None,
-        custom: dict = None,
+        exp: str = "",
+        custom: Optional[Dict[Any, Any]] = None,
         payload: int = 0,
-    ) -> None:
+    ) -> str:
         # pylint: disable=C0301
         """
         Create new JWT token.
 
         Required arguments:
-            --dir=<path>: str
             --iss=<issuer>: str
             --aud=<audince>: str
             --uid=<id>: int
@@ -74,7 +75,7 @@ class GenerateJWT:
             --payload=<signed key payload>
             examples:
                 --exp="minutes=5" - valid units: "seconds=int" | "minutes=int" | "days=int" | "hours=int" | "weeks=int"
-                --custom="{var1:value1,var2:value2,...}"
+                --custom="{var1:value1,var2:value2}"
                 --payload=5
         """
         # required claims
@@ -87,7 +88,7 @@ class GenerateJWT:
         # add expiration if exist
         if exp:
             # check format
-            if not "=" in exp:
+            if "=" not in exp:
                 return f"Error: --exp={exp} bad format."
             parts = exp.split("=")
             valid_units = {"seconds", "minutes", "days", "hours", "weeks"}
@@ -121,10 +122,12 @@ class GenerateJWT:
                     return wjwt.create(claims=claims, payload=payload)
             else:
                 return wjwt.create(claims=claims)
-        except Exception as e: # pylint: disable=W0718
-            return f"Error: {type(e).__name__} : {str(e)}"
+        except Exception as e:  # pylint: disable=W0718
+            return f"{type(e).__name__}: {str(e)}"
 
-    def keys(self) -> None:
+        return ""
+
+    def keys(self) -> str:
         """
         Create new KEYS
         """
@@ -136,10 +139,10 @@ class GenerateJWT:
                 f"New keys has been saved in '{self.storage}' "
                 f"storage with KID: '{self.__wjwk.get_kid()}'."
             )
-        except Exception as e: # pylint: disable=W0718
-            return f"Error: {type(e).__name__} : {str(e)}"
+        except Exception as e:  # pylint: disable=W0718
+            return f"{type(e).__name__}: {str(e)}"
 
-    def check(self, iss: str, aud: str, token: str) -> None:
+    def check(self, iss: str, aud: str, token: str) -> str:
         """
         Check validity of a token
 
@@ -156,14 +159,40 @@ class GenerateJWT:
 
         try:
             wjwt = WrapJWT(self.__wjwk)
-            token = wjwt.decode(token=token)
-            if wjwt.validate(token=token, claims=claims):
+            decoded_token: Token = wjwt.decode(token=token)
+            if wjwt.validate(token=decoded_token, claims=claims):
                 return "Token is valid."
-        except Exception as e: # pylint: disable=W0718
-            return f"Invalid: {type(e).__name__} : {str(e)}"
+        except Exception as e:  # pylint: disable=W0718
+            return f"{type(e).__name__}: {str(e)}"
+
+        return ""
+
+    def show(
+        self, token: str, header: bool = False, claims: bool = True
+    ) -> str:
+        """
+        Show headers and claims from a token
+
+        Required arguments:
+            --token=<jwt token>: str
+        Optional arguments:
+            --header=True: bool - default False
+            --claims=False: bool - default True
+        """
+        try:
+            wjwt = WrapJWT(self.__wjwk)
+            decoded_token: Token = wjwt.decode(token=token)
+            if header:
+                print(f"Header: {decoded_token.header}")
+            if claims:
+                print(f"Claims: {decoded_token.claims}")
+        except Exception as e:  # pylint: disable=W0718
+            return f"{type(e).__name__}: {str(e)}"
+
+        return ""
 
 
-def run():
+def run() -> None:
     fire.Fire(GenerateJWT)
 
 

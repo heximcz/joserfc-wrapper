@@ -8,12 +8,12 @@ from joserfc_wrapper.Exceptions import (
     CreateTokenException,
     TokenKidInvalidError,
 )
-from joserfc_wrapper import WrapJWK
+from joserfc_wrapper.WrapJWK import WrapJWK
 
 from joserfc import jwt
 from joserfc.errors import MissingClaimError
 from joserfc.jwk import ECKey
-from joserfc.jwt import Token, JWTClaimsRegistry
+from joserfc.jwt import Token, JWTClaimsRegistry, ClaimsOption
 
 
 class WrapJWT:
@@ -26,10 +26,10 @@ class WrapJWT:
         """
         if not isinstance(wrapjwk, WrapJWK):
             raise ObjectTypeError
-        self.__jwk = wrapjwk
-        self.__kid = None
+        self.__jwk: WrapJWK = wrapjwk
+        self.__kid: str = ""
 
-    def get_kid(self) -> str | None:
+    def get_kid(self) -> str:
         """Return Key ID"""
         return self.__kid
 
@@ -60,8 +60,15 @@ class WrapJWT:
         :returns bool:
         """
         try:
-            claims_for_registry = {k: {"value": v} for k, v in claims.items()}
-            reg = JWTClaimsRegistry(**claims_for_registry)
+            claims_for_registry: dict[str, ClaimsOption] = {
+                k: {
+                    "essential": True,
+                    "allow_blank": False,
+                    "value": v
+                }
+                for k, v in claims.items()
+            }
+            reg = JWTClaimsRegistry(None, 0, **claims_for_registry)
             reg.validate(token.claims)
             return True
         except MissingClaimError:
@@ -131,8 +138,9 @@ class WrapJWT:
                     f"Expected '{expected_type.__name__}', "
                     f"got '{type(claims[key]).__name__}'."
                 )
+        return None
 
-    def __load_keys(self, kid: str = None) -> None:
+    def __load_keys(self, kid: str = "") -> None:
         self.__jwk.load_keys(kid)
 
     def __load_keys_decode(self, token: str) -> bool | None:
@@ -144,13 +152,12 @@ class WrapJWT:
         self.__load_keys(kid)
         return True
 
-    def __decode_jwt(self, token: str) -> str:
+    def __decode_jwt(self, token: str) -> dict:
         """Decode token for get KID"""
         header, _, _ = token.split(".")
-        decoded_header = json.loads(
+        return json.loads(
             self.__base64_url_decode(header).decode("utf-8")
         )
-        return decoded_header
 
     def __validate_kid(self, kid: str) -> bool:
         """Validate Key ID"""
@@ -160,7 +167,7 @@ class WrapJWT:
         except ValueError:
             return False
 
-    def __base64_url_decode(self, header: str) -> str:
+    def __base64_url_decode(self, header: str) -> bytes:
         """Just b64 decode"""
         remainder = len(header) % 4
         if remainder > 0:

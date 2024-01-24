@@ -2,7 +2,7 @@
 from joserfc import jwe
 from joserfc.jwk import OctKey
 from joserfc_wrapper.Exceptions import ObjectTypeError
-from joserfc_wrapper import WrapJWK
+from joserfc_wrapper.WrapJWK import WrapJWK
 
 
 class WrapJWE:
@@ -17,7 +17,7 @@ class WrapJWE:
             raise ObjectTypeError
         self.__jwk = wrapjwk
 
-    def encrypt(self, data: str | bytes, kid: str = None) -> bytes:
+    def encrypt(self, data: str | bytes, kid: str = "") -> str:
         """
         Encrypt string or bytes with key
 
@@ -35,14 +35,14 @@ class WrapJWE:
             return jwe.encrypt_compact(protected, data, key)
         raise TypeError("Bad type of data.")
 
-    def decrypt(self, data: str, kid: str = None) -> bytes:
+    def decrypt(self, data: str, kid: str = "") -> bytes | None:
         """
         Decrypt string or bytes with key
 
         :param data: Secret string
         :type str:
         :returns: Decrypted strig with last valid key
-        :rtype str:
+        :rtype bytes | None:
         :raise TypeError:
         """
         if isinstance(data, str):

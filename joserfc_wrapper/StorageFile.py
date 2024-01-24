@@ -2,7 +2,7 @@
 import os
 import re
 import json
-from joserfc_wrapper import AbstractKeyStorage
+from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
 
 
 class StorageFile(AbstractKeyStorage):
@@ -28,9 +28,11 @@ class StorageFile(AbstractKeyStorage):
             if match:
                 return match.group(1)
 
-    def load_keys(self, kid: str) -> tuple[str, dict]:
+        return ""
+
+    def load_keys(self, kid: str = "") -> tuple[str, dict]:
         """Load keys"""
-        if not kid:
+        if kid == "":
             kid = self.get_last_kid()
 
         return kid, self.__load_key_files(kid)

@@ -1,6 +1,6 @@
 """ vault manipulation class """
 import hvac
-from joserfc_wrapper import AbstractKeyStorage
+from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
 
 
 class StorageVault(AbstractKeyStorage):
@@ -8,9 +8,9 @@ class StorageVault(AbstractKeyStorage):
 
     def __init__(
         self,
-        url: str = None,
-        token: str = None,
-        mount: str = None,
+        url: str = "",
+        token: str = "",
+        mount: str = "",
     ) -> None:
         """
         Handles for HashiCorp Vault Storage
@@ -40,10 +40,10 @@ class StorageVault(AbstractKeyStorage):
 
         return result["data"]["kid"]
 
-    def load_keys(self, kid: str = None) -> tuple[str, dict]:
+    def load_keys(self, kid: str = "") -> tuple[str, dict]:
         """Load keys"""
 
-        if not kid:
+        if kid == "":
             kid = self.get_last_kid()
 
         result = self.__client.secrets.kv.v1.read_secret(
