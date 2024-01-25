@@ -61,11 +61,7 @@ class WrapJWT:
         """
         try:
             claims_for_registry: dict[str, ClaimsOption] = {
-                k: {
-                    "essential": True,
-                    "allow_blank": False,
-                    "value": v
-                }
+                k: {"essential": True, "allow_blank": False, "value": v}
                 for k, v in claims.items()
             }
             reg = JWTClaimsRegistry(None, 0, **claims_for_registry)
@@ -155,9 +151,7 @@ class WrapJWT:
     def __decode_jwt(self, token: str) -> dict:
         """Decode token for get KID"""
         header, _, _ = token.split(".")
-        return json.loads(
-            self.__base64_url_decode(header).decode("utf-8")
-        )
+        return json.loads(self.__base64_url_decode(header).decode("utf-8"))
 
     def __validate_kid(self, kid: str) -> bool:
         """Validate Key ID"""

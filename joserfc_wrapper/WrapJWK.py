@@ -55,7 +55,7 @@ class WrapJWK:
 
     def increase_counter(self) -> None:
         """Key Counter plus one"""
-#        if self.__counter is not None:
+        #        if self.__counter is not None:
         self.__counter += 1
 
     def generate_keys(self) -> None:
