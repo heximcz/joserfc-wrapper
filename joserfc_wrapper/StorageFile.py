@@ -1,6 +1,5 @@
 """ file manipulation class """
 import os
-import re
 import json
 from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
 
@@ -14,21 +13,18 @@ class StorageFile(AbstractKeyStorage):
         :type str:
         """
         self.__cert_dir = cert_dir
+        # file name for save last keys ID - default "last-key-id"
+        self.last_id_name = "last-key-id"
 
     def get_last_kid(self) -> str:
         """Return last Key ID"""
-        files = [f for f in os.listdir(self.__cert_dir) if f.endswith(".json")]
-        files.sort(
-            key=lambda x: os.path.getmtime(os.path.join(self.__cert_dir, x)),
-            reverse=True,
+        last_kid_path = os.path.join(
+            self.__cert_dir, f"{self.last_id_name}.json"
         )
+        with open(last_kid_path, "r", encoding="utf-8") as f:
+            last_kid = json.load(f)
 
-        if files:
-            match = re.search(r"^([a-f0-9]{32})?\.json$", files[0])
-            if match:
-                return match.group(1)
-
-        return ""
+        return last_kid["kid"]
 
     def load_keys(self, kid: str = "") -> tuple[str, dict]:
         """Load keys"""
@@ -57,6 +53,8 @@ class StorageFile(AbstractKeyStorage):
         with open(keys_path, "w", encoding="utf-8") as f:
             json.dump(keys, f)
 
+        self._save_last_id(kid)
+
     def __load_key_files(self, kid: str) -> dict:
         """Loads key files from the specified directory"""
 
@@ -65,3 +63,10 @@ class StorageFile(AbstractKeyStorage):
             keys = json.load(f)
 
         return keys
+
+    def _save_last_id(self, kid: str) -> None:
+        """save last kid to file with last key"""
+        last_key = {"kid": kid}
+        keys_path = os.path.join(self.__cert_dir, f"{self.last_id_name}.json")
+        with open(keys_path, "w", encoding="utf-8") as f:
+            json.dump(last_key, f)

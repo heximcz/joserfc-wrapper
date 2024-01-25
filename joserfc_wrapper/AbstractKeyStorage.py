@@ -51,3 +51,14 @@ class AbstractKeyStorage(ABC):
         :raises: Any
         """
         pass
+
+    @abstractmethod
+    def _save_last_id(self, kid: str) -> None:
+        """
+        Save last KID
+
+        :param kid:
+        :type kid: str
+        :returns: None
+        """
+        pass

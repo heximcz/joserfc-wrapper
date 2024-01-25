@@ -60,9 +60,9 @@ class StorageVault(AbstractKeyStorage):
             mount_point=self.__mount, path=kid, secret=keys
         )
 
-        self.__save_last_id(kid)
+        self._save_last_id(kid)
 
-    def __save_last_id(self, kid: str) -> None:
+    def _save_last_id(self, kid: str) -> None:
         """Save last Key ID"""
 
         secret = {"kid": kid}
