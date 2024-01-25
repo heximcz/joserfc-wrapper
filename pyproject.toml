@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "joserfc-wrapper"
-version = "0.2.2"
+version = "0.2.3"
 description = "joserfc-wrapper is a library for easy use of JWT and automatic management of signature keys."
 authors = ["Lubomir Spacek <hexim@hexim.cz>"]
 readme = "README.md"
