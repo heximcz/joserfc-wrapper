@@ -1,0 +1,6 @@
+**
+!pyproject.toml
+!poetry.lock
+!README.md
+!joserfc_wrapper
+**/__pycache__

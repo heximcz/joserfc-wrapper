@@ -1,0 +1,57 @@
+name: joserfc-wrapper
+
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.10}
+    volumes:
+      - ..:/app
+      # keep the host .venv out of the container
+      - /app/.venv
+      - keys:/keys
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+      VAULT_MOUNT: jwt
+      VAULT_MOUNT_V1: jwt-v1
+      CERT_DIR: /keys
+    depends_on:
+      vault-init:
+        condition: service_completed_successfully
+
+  vault:
+    image: hashicorp/vault:2.1
+    command: server -dev -dev-root-token-id=dev-root -dev-listen-address=0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "127.0.0.1:8200:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  # jwt = KV v2 (default of StorageVault), jwt-v1 = KV v1 (older versions)
+  vault-init:
+    image: hashicorp/vault:2.1
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        vault secrets list | grep -q '^jwt/' ||
+        vault secrets enable -path=jwt -version=2 kv;
+        vault secrets list | grep -q '^jwt-v1/' ||
+        vault secrets enable -path=jwt-v1 -version=1 kv
+    depends_on:
+      vault:
+        condition: service_healthy
+
+volumes:
+  keys:
