@@ -3,3 +3,7 @@
 poetry.lock
 .venv
 __pycache__
+pyrightconfig.json
+.vscode
+.project.md
+.claude/
