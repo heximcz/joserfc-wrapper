@@ -1,8 +1,10 @@
 # Documentation for CLI
 
-The library includes a key and token generator for creating new signature keys and tokens or verifying existing ones.
+The library includes the `genjw` command for creating new signature keys and
+tokens or verifying existing ones.
 
-### Show help
+## Show help
+
 ```bash
 genjw --help
 genjw keys --help [--storage=file]
@@ -18,10 +20,17 @@ Configure environment
 ```bash
 export VAULT_ADDR="http://127.0.0.1:8200"
 export VAULT_MOUNT="<mount>"
-export VAULT_TOKEN="<vault token>
+export VAULT_TOKEN="<vault token>"
+# optional, version of the KV secrets engine: 2 (default) or 1
+export VAULT_KV_VERSION=2
 ```
 
-The `--storage` switch does not need to be defined in this case since the default storage is `vault`.
+KV v2 is safe for concurrent processes (check-and-set). Use
+`VAULT_KV_VERSION=1` for keys saved by versions older than 0.3.0 in a KV v1
+mount.
+
+The `--storage` switch does not need to be defined in this case since the
+default storage is `vault`.
 
 Create first keys
 
@@ -35,9 +44,10 @@ Create JWT token
 
 ```bash
 # Minimal
-genjw token --iss="https//example.tld" --aud="auditor" --uid=123
+genjw token --iss="https://example.tld" --aud="auditor" --uid=123
 # Full
-genjw token --iss="https//example.tld" --aud="auditor" --uid=123 --exp='minutes=10' --custom="{var1:value1,var2:value2}"
+genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
+    --exp="minutes=10" --custom="{var1:value1,var2:value2}" --payload=10
 # output
 # eyJ0eXAiOiJKV1QiLCJhbGc...
 ```
@@ -45,7 +55,8 @@ genjw token --iss="https//example.tld" --aud="auditor" --uid=123 --exp='minutes=
 Validate JWT token
 
 ```bash
-genjw check --iss="https//example.tld" --aud="auditor" --token="eyJ0eXAiOiJKV1QiLCJhbGc..."
+genjw check --iss="https://example.tld" --aud="auditor" \
+    --token="eyJ0eXAiOiJKV1QiLCJhbGc..."
 # output
 # Token is valid.
 ```
@@ -54,72 +65,73 @@ Show header and claims
 
 ```bash
 genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..."
-genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --headers=True
+genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --header=True
 # output
 # Header: {'typ': 'JWT', 'alg': 'ES256', 'kid': '8cb0...'}
-# Claims: {'iss': 'https//example.tld', 'aud': 'auditor', 'uid': 123, 'iat': 170...}
+# Claims: {'iss': 'https://example.tld', 'aud': 'auditor', 'uid': 123, ...}
 ```
 
 ## File storage
 
-Configure environment
+Configure environment, the directory must exist
 
 ```bash
-export CERT_DIR="/tmp"
+export CERT_DIR="/etc/myapp/keys"
 ```
+
+Use the `--storage=file` switch with all commands.
 
 Create first keys
 
 ```bash
 genjw keys --storage=file
-# New keys has been saved in 'vault' storage with KID: 'eyJ0eXAiOiJKV1QiLCJhbGc...'.
+# output
+# New keys has been saved in 'file' storage with KID: '541b3bdf155e4fd...'.
 ```
 
 Create JWT token
 
 ```bash
-# Minimal
-genjw token --iss="https//example.tld" --aud="auditor" --uid=123 --storage=file
-# Full
-genjw token --iss="https//example.tld" --aud="auditor" --uid=123 --exp='minutes=10' --custom="{var1:value1,var2:value2}" --storage=file
-# output
-# eyJ0eXAiOiJKV1QiLCJhbGc...
+genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
+    --storage=file
 ```
 
 Validate JWT token
 
 ```bash
-genjw check --iss="https//example.tld" --aud="auditor" --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --storage=file
-# output
-# Token is valid.
+genjw check --iss="https://example.tld" --aud="auditor" \
+    --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --storage=file
 ```
 
 Show header and claims
 
 ```bash
-genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --storage=file
-genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --headers=True --storage=file
-# output
-# Header: {'typ': 'JWT', 'alg': 'ES256', 'kid': '8cb0...'}
-# Claims: {'iss': 'https//example.tld', 'aud': 'auditor', 'uid': 123, 'iat': 170...}
+genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --header=True --storage=file
 ```
 
-## Using payload switch
+## Token options
 
-When generating the token, you can set the `--payload` switch to a value higher than zero. This will check how many times the signature key was used to sign the token. If the value limit is exceeded, a new signature key will be automatically generated to sign a new token. This feature enhances security by ensuring that if the given signature key is leaked or compromised, only a certain portion of the token will be affected.
+- `--exp` - the token expires after the given time, units: `seconds`,
+  `minutes`, `hours`, `days`, `weeks`, for example `--exp="hours=2"`.
+  Without `--exp` the token is valid as long as its signing key exists.
+- `--custom` - other claims, they do not override the required claims.
+- `--payload` - the maximum number of tokens signed by a key, 0 (default) =
+  unlimited. When the key reaches it, a new signature key is generated
+  automatically. If a signature key is leaked or compromised, only a limited
+  number of tokens is affected. The old keys stay in the storage for
+  verifying older tokens.
+
+## Errors
+
+Errors are printed to stderr and the command exits with code 1. Exceptions
+are printed in the format `exception name: error`. For instance:
 
 ```bash
-genjw token --iss="https//example.tld" --aud="auditor" --uid=123 --payload=10
-```
-
-### Errors
-
-Exceptions are listed in the following format: `exception name` : `error`. For instance:
-```bash
-Invalid: BadSignatureError : bad_signature:
+BadSignatureError: bad_signature:
 # or
-Invalid: InvalidClaimError : invalid_claim: Invalid claim: "iss"
+TokenDecodeError: Invalid token format.
+# or for a valid token with not matching claims or an expired token
+Token is invalid.
 ```
 
-[< back to index](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md)
-
+[< back to index](./index.md)
