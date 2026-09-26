@@ -1,8 +1,11 @@
-""" joserfc_wrapper exceptions """
+"""joserfc_wrapper exceptions"""
+
 from typing import Optional
 
 
 class WrapperErrors(Exception):
+    """Base class of joserfc_wrapper exceptions"""
+
     #: short-string error code
     error: str = ""
     #: long-string to describe this error
@@ -12,7 +15,9 @@ class WrapperErrors(Exception):
         if description is not None:
             self.description = description
 
-        message = f"{self.error}: {self.description}"
+        message = self.error
+        if self.description:
+            message = f"{self.error}: {self.description}"
         super(WrapperErrors, self).__init__(message)
 
 
@@ -23,15 +28,19 @@ class ObjectTypeError(WrapperErrors):
 # JWK
 class GenerateKeysError(WrapperErrors):
     error = "Error when generate new keys."
-    description = "Check path."
 
 
 class KeysSaveError(WrapperErrors):
-    error = "Unable to save files. Check the path is correct."
+    error = "Unable to save keys to the storage."
 
 
 class KeysLoadError(WrapperErrors):
-    error = "Unable to load files. Check the path is correct."
+    error = "Unable to load keys from the storage."
+
+
+class KeysNotLoadedError(WrapperErrors):
+    error = "Keys are not loaded."
+    description = "Call 'load_keys' or 'generate_keys' first."
 
 
 # JWT
@@ -41,3 +50,7 @@ class CreateTokenException(WrapperErrors):
 
 class TokenKidInvalidError(WrapperErrors):
     error = "Invalid KID in token."
+
+
+class TokenDecodeError(WrapperErrors):
+    error = "Invalid token format."

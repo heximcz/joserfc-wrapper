@@ -1,4 +1,5 @@
-""" joserfc_wrapper """
+"""joserfc_wrapper"""
+
 # pylint: disable=C0103
 from .Exceptions import *
 from .AbstractKeyStorage import AbstractKeyStorage

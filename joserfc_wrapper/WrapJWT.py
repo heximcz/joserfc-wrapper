@@ -1,17 +1,15 @@
-""" joserfc jwt wrapper """
+"""joserfc jwt wrapper"""
+
 import time
-import base64
-import json
-import uuid
 from joserfc_wrapper.Exceptions import (
     ObjectTypeError,
     CreateTokenException,
-    TokenKidInvalidError,
 )
+from joserfc_wrapper.TokenHeader import read_kid
 from joserfc_wrapper.WrapJWK import WrapJWK
 
 from joserfc import jwt
-from joserfc.errors import MissingClaimError
+from joserfc.errors import JoseError
 from joserfc.jwk import ECKey
 from joserfc.jwt import Token, JWTClaimsRegistry, ClaimsOption
 
@@ -41,13 +39,15 @@ class WrapJWT:
         :type str:
         :returns: object
         :rtype Token:
-        :raise TokenKidInvalidError:
-
+        :raise TokenDecodeError: malformed token
+        :raise TokenKidInvalidError: missing or invalid KID
+        :raise JoseError: invalid signature
         """
-        if self.__load_keys_decode(token):
-            key = ECKey.import_key(self.__jwk.get_private_key())
-            return jwt.decode(token, key)
-        raise TokenKidInvalidError
+        kid = read_kid(token)
+        self.__kid = kid
+        self.__load_keys(kid)
+        key = ECKey.import_key(self.__jwk.get_public_key())
+        return jwt.decode(token, key, algorithms=["ES256"])
 
     def validate(self, token: Token, claims: dict) -> bool:
         """
@@ -57,7 +57,9 @@ class WrapJWT:
         :type str:
         :param claims: Claims keys to must be equal in token
         :type dict:
-        :returns bool:
+        :returns: False when a claim is missing or invalid, or the token
+            is expired or not yet valid ('exp', 'nbf')
+        :rtype bool:
         """
         try:
             claims_for_registry: dict[str, ClaimsOption] = {
@@ -67,12 +69,17 @@ class WrapJWT:
             reg = JWTClaimsRegistry(None, 0, **claims_for_registry)
             reg.validate(token.claims)
             return True
-        except MissingClaimError:
+        except JoseError:
             return False
 
-    def create(self, claims: dict, payload: int = 0) -> str:
+    def create(
+        self, claims: dict, payload: int = 0, exp: int | None = None
+    ) -> str:
         """
         Create a JWT Token with claims and signed with existing key.
+
+        A token without 'exp' is valid as long as its key exists
+        in the storage.
 
         :param claims:
         :type dict:
@@ -80,35 +87,36 @@ class WrapJWT:
             times the key has been used for signing tokens. If the value
             is exceeded, a new key is automatically generated.
         :type int:
+        :param exp: token expires after this number of seconds, sets the
+            'exp' claim, None = no expiration (or 'exp' in claims)
+        :type int | None:
         :raises CreateTokenException:
         :returns: jwt token
         :rtype str:
         """
         # check required claims
         self.__check_claims(claims)
+        self.__check_exp(claims, exp)
+        # do not modify the caller's claims
+        claims = dict(claims)
 
-        # load last keys
-        self.__load_keys()
-        if payload and self.__jwk.get_counter() >= payload:
-            self.__jwk.generate_keys()
-            self.__jwk.save_keys()
+        # load the last keys, count the token and rotate keys by payload
+        self.__jwk.reserve_key(payload)
 
         # create header
         headers = {"alg": "ES256", "kid": self.__jwk.get_kid()}
         # add actual iat to claims
         claims["iat"] = int(time.time())  # actual unix timestamp
+        if exp is not None:
+            claims["exp"] = claims["iat"] + exp
 
         # generate token
         private = ECKey.import_key(self.__jwk.get_private_key())
         token = jwt.encode(headers, claims, private)
 
-        # save counter
-        self.__jwk.increase_counter()
-        self.__jwk.save_keys()
-
         return token
 
-    def __check_claims(self, claims: dict) -> None | CreateTokenException:
+    def __check_claims(self, claims: dict) -> None:
         """
         Checks if the claims contains all required keys with valid types.
 
@@ -128,42 +136,34 @@ class WrapJWT:
                 raise CreateTokenException(
                     f"Missing required claims argument: '{key}'."
                 )
-            if not isinstance(claims[key], expected_type):
+            # bool is a subclass of int
+            if not isinstance(claims[key], expected_type) or isinstance(
+                claims[key], bool
+            ):
                 raise CreateTokenException(
                     f"Incorrect type for claims argument '{key}': "
                     f"Expected '{expected_type.__name__}', "
                     f"got '{type(claims[key]).__name__}'."
                 )
-        return None
+
+    def __check_exp(self, claims: dict, exp: int | None) -> None:
+        """
+        Checks the expiration parameter
+
+        :raises CreateTokenException: invalid exp or 'exp' also in claims
+        """
+        if exp is None:
+            return
+        # bool is a subclass of int
+        if not isinstance(exp, int) or isinstance(exp, bool) or exp <= 0:
+            raise CreateTokenException(
+                "Parameter 'exp' must be a positive integer (seconds)."
+            )
+        if "exp" in claims:
+            raise CreateTokenException(
+                "Set the expiration by the 'exp' parameter or in claims, "
+                "not both."
+            )
 
     def __load_keys(self, kid: str = "") -> None:
         self.__jwk.load_keys(kid)
-
-    def __load_keys_decode(self, token: str) -> bool | None:
-        """Load right keys for a token"""
-        kid = self.__decode_jwt(token)["kid"]
-        if not self.__validate_kid(kid):
-            return False
-        self.__kid = kid
-        self.__load_keys(kid)
-        return True
-
-    def __decode_jwt(self, token: str) -> dict:
-        """Decode token for get KID"""
-        header, _, _ = token.split(".")
-        return json.loads(self.__base64_url_decode(header).decode("utf-8"))
-
-    def __validate_kid(self, kid: str) -> bool:
-        """Validate Key ID"""
-        try:
-            uuid_obj = uuid.UUID(kid)
-            return uuid_obj.version == 4
-        except ValueError:
-            return False
-
-    def __base64_url_decode(self, header: str) -> bytes:
-        """Just b64 decode"""
-        remainder = len(header) % 4
-        if remainder > 0:
-            header += "=" * (4 - remainder)
-        return base64.urlsafe_b64decode(header)
