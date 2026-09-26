@@ -1,6 +1,6 @@
 [project]
 name = "joserfc-wrapper"
-version = "0.2.3"
+version = "0.3.0"
 description = "joserfc-wrapper is a library for easy use of JWT and automatic management of signature keys."
 authors = [{ name = "Lubomir Spacek", email = "hexim@hexim.cz" }]
 readme = "README.md"
