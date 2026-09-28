@@ -12,7 +12,7 @@ RUN pip install poetry
 WORKDIR /app
 
 # dependencies first for better layer caching
-COPY pyproject.toml poetry.lock* README.md ./
+COPY pyproject.toml poetry.lock* README.md LICENSE ./
 RUN poetry install --no-root --with dev
 
 # project in editable mode, the source is mounted over /app at runtime

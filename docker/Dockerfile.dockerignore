@@ -2,5 +2,6 @@
 !pyproject.toml
 !poetry.lock
 !README.md
+!LICENSE
 !joserfc_wrapper
 **/__pycache__
