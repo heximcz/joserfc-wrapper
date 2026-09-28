@@ -1,7 +1,7 @@
 """vault manipulation class"""
 
 import hvac
-from hvac.exceptions import InvalidRequest
+from hvac.exceptions import InvalidPath, InvalidRequest
 from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
 from joserfc_wrapper.Exceptions import KeysSaveError
 
@@ -11,6 +11,8 @@ class StorageVault(AbstractKeyStorage):
 
     # attempts to write with check-and-set before giving up
     cas_attempts = 100
+
+    not_found_errors = (InvalidPath,)
 
     def __init__(
         self,

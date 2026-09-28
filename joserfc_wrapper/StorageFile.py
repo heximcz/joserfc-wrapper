@@ -16,6 +16,8 @@ except ImportError:  # pragma: no cover - Windows
 class StorageFile(AbstractKeyStorage):
     """interface for saving and loading a key on the file system"""
 
+    not_found_errors = (FileNotFoundError,)
+
     def __init__(self, cert_dir: str) -> None:
         """
         :param cert_dir: - path to the directory with certificates

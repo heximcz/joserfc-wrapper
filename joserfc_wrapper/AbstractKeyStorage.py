@@ -6,6 +6,10 @@ from abc import ABC, abstractmethod
 class AbstractKeyStorage(ABC):
     """Abstract methods for keys storage"""
 
+    #: exceptions of 'load_keys' and 'get_last_kid' meaning that the keys
+    #: do not exist in the storage (unknown kid), not a storage failure
+    not_found_errors: tuple[type[Exception], ...] = ()
+
     @abstractmethod
     def get_last_kid(self) -> str:
         """

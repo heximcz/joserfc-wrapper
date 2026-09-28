@@ -1,9 +1,9 @@
 # Security notes for developers
 
 What to watch out for when you use `joserfc-wrapper` to protect an API.
-Valid for version 0.3.1.
+Valid for version 0.4.0.
 
-## 1. `decode` is not enough, always call `validate`
+## 1. Use `verify`, never `decode` alone
 
 `decode` verifies only the signature. It does not check the expiration,
 the issuer or the audience. A correctly signed token for another
@@ -13,32 +13,23 @@ application, or an expired token, passes `decode`.
 # WRONG: an expired token or a token for another audience is accepted
 token = myjwt.decode(raw)
 
-# RIGHT: signature and claims
-token = myjwt.decode(raw)
-if not myjwt.validate(token, {"iss": "https://example.com", "aud": "api"}):
-    raise Unauthorized()
+# RIGHT: signature, exp, nbf, iss, aud in one call
+myjwt = WrapJWT(myjwk, issuer="https://example.com", audience="api")
+token = myjwt.verify(raw)  # raises InvalidTokenError for an invalid token
 ```
 
-Always check the return value of `validate`, it returns `False`, it does not
-raise an exception for an invalid token.
+`verify` raises an exception, it never returns an invalid token. It refuses
+to work without `issuer` and `audience`, so a token for another service
+cannot pass by mistake. `validate` is deprecated since 0.4.0.
 
-## 2. `validate` checks only what you pass
+## 2. Every token must expire
 
-`validate` compares only the claims in its argument. `exp` and `nbf` are
-checked only when the token contains them.
+`verify` rejects a token without `exp`. Create tokens with an expiration:
+set `default_exp` of `WrapJWT`, or `myjwt.create(claims, exp=3600)`, or
+`genjw token --exp="hours=1"` (required by the CLI).
 
-- `validate(token, {})` returns `True` for any correctly signed token
-  without `exp`. Always pass at least `iss` and `aud`.
-- A token without `exp` is valid as long as its signing key exists. Require
-  it in your application:
-
-```python
-if "exp" not in token.claims:
-    raise Unauthorized()
-```
-
-- Create tokens with an expiration: `myjwt.create(claims, exp=3600)` or
-  `genjw token --exp="hours=1"`.
+Use a short `exp` for API tokens, a token cannot be revoked one by one
+(see 5).
 
 ## 3. Claims are readable by anyone
 
@@ -79,29 +70,26 @@ lifetime, not for long-term storage.
 
 ## 7. Clock synchronisation
 
-`exp` and `nbf` are checked without any tolerance. A token which expired
-one second ago is invalid. Keep the clocks of all servers which create and
+`exp` and `nbf` are checked without any tolerance by default. A token which
+expired one second ago is invalid. `leeway` of `WrapJWT` sets a tolerance in
+seconds. Keep the clocks of all servers which create and
 verify tokens synchronised (NTP).
 
 ## 8. Storage errors are not invalid tokens
 
 Distinguish a failure of the storage from an invalid token, otherwise an
-unavailable Vault looks like an attack or all clients get `401`.
+unavailable Vault looks like an attack or all clients get `401`. `verify`
+does it for you:
 
 ```python
-from hvac.exceptions import Forbidden, VaultDown
-from requests.exceptions import RequestException
-from joserfc_wrapper import KeysLoadError
-
-# Vault errors and connection errors, not errors of the token
-SERVER_ERRORS = (Forbidden, VaultDown, RequestException)
+from joserfc_wrapper import InvalidTokenError, KeysLoadError
 
 try:
-    token = myjwt.decode(raw)
-except KeysLoadError as e:
-    if isinstance(e.__cause__, SERVER_ERRORS):
-        raise ServerError()  # 500: storage or application token problem
-    raise Unauthorized()  # 401: unknown kid
+    token = myjwt.verify(raw)
+except InvalidTokenError:
+    raise Unauthorized()  # 401: invalid, expired, unknown kid, ...
+except KeysLoadError:
+    raise ServerError()  # 500: storage or application token problem
 ```
 
 Do not return exception messages to clients, log them.

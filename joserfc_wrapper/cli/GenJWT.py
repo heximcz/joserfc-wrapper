@@ -6,7 +6,13 @@ import sys
 import fire
 import datetime
 from typing import Optional, Dict, Any, NoReturn
-from joserfc_wrapper import StorageVault, StorageFile, WrapJWK, WrapJWT
+from joserfc_wrapper import (
+    InvalidTokenError,
+    StorageVault,
+    StorageFile,
+    WrapJWK,
+    WrapJWT,
+)
 from joserfc.jwt import Token
 
 
@@ -83,8 +89,8 @@ class GenerateJWT:
             --iss=<issuer>: str
             --aud=<audince>: str
             --uid=<id>: int
-        Optional arguments:
             --exp=<expire after>: str
+        Optional arguments:
             --custom=<custom data>: dict
             --payload=<signed key payload>
             examples:
@@ -99,7 +105,12 @@ class GenerateJWT:
             "uid": uid,
         }
 
-        # add expiration if exist
+        # expiration is required, a token without exp is always invalid
+        if not exp:
+            fail(
+                'Error: --exp is required, e.g. --exp="hours=1". '
+                "A token without expiration is invalid."
+            )
         expire = None
         if exp:
             # check format
@@ -168,21 +179,13 @@ class GenerateJWT:
             --aud=<audience>: str
             --token=<jwt token>: str
         """
-        # required claims
-        claims = {
-            "iss": iss,
-            "aud": aud,
-        }
-
         try:
-            wjwt = WrapJWT(self.__wjwk)
-            decoded_token: Token = wjwt.decode(token=token)
-            valid = wjwt.validate(token=decoded_token, claims=claims)
+            WrapJWT(self.__wjwk, issuer=iss, audience=aud).verify(token)
+        except InvalidTokenError as e:
+            fail(f"Token is invalid. {type(e).__name__}: {str(e)}")
         except Exception as e:  # pylint: disable=W0718
             fail_exception(e)
 
-        if not valid:
-            fail("Token is invalid.")
         return "Token is valid."
 
     def show(

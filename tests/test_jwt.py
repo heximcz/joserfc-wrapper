@@ -96,14 +96,16 @@ def test_decode_invalid_kid(jwt, claims):
         jwt.decode(forged)
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_validate(jwt, claims):
-    token = jwt.decode(jwt.create(claims=dict(claims)))
+    token = jwt.decode(jwt.create(claims=dict(claims), exp=60))
 
     assert jwt.validate(token, {"iss": claims["iss"], "aud": claims["aud"]})
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_validate_missing_claim(jwt, claims):
-    token = jwt.decode(jwt.create(claims=dict(claims)))
+    token = jwt.decode(jwt.create(claims=dict(claims), exp=60))
 
     assert not jwt.validate(token, {"role": "admin"})
 
@@ -146,12 +148,14 @@ def test_decode_missing_kid(jwt, claims):
         jwt.decode(forged)
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_validate_wrong_value(jwt, claims):
-    token = jwt.decode(jwt.create(claims=dict(claims)))
+    token = jwt.decode(jwt.create(claims=dict(claims), exp=60))
 
     assert not jwt.validate(token, {"iss": "https://other.example.com"})
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_validate_expired(jwt, claims):
     expired = {**claims, "exp": int(time.time()) - 60}
     token = jwt.decode(jwt.create(claims=expired))
@@ -177,6 +181,7 @@ def test_create_without_keys(storage, claims):
         WrapJWT(WrapJWK(storage)).create(claims=claims)
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_create_with_exp(jwt, claims):
     token = jwt.decode(jwt.create(claims=dict(claims), exp=300))
 
@@ -184,6 +189,7 @@ def test_create_with_exp(jwt, claims):
     assert jwt.validate(token, {"iss": claims["iss"]})
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_create_with_exp_expired(jwt, claims, monkeypatch):
     token = jwt.create(claims=dict(claims), exp=1)
     now = time.time()
@@ -219,3 +225,18 @@ def test_create_invalid_exp_does_not_count(jwt, jwk, storage, claims):
 def test_error_message_without_description():
     assert str(TokenDecodeError()) == "Invalid token format."
     assert str(TokenDecodeError("detail")) == "Invalid token format.: detail"
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_validate_token_without_exp(jwt, claims):
+    """Since 0.4.0 a token without exp is invalid also in validate"""
+    token = jwt.decode(jwt.create(claims=dict(claims)))
+
+    assert not jwt.validate(token, {"iss": claims["iss"]})
+
+
+def test_validate_is_deprecated(jwt, claims):
+    token = jwt.decode(jwt.create(claims=dict(claims), exp=60))
+
+    with pytest.warns(DeprecationWarning, match="use WrapJWT.verify"):
+        assert jwt.validate(token, {"iss": claims["iss"]})

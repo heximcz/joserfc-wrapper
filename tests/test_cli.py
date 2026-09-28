@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from joserfc_wrapper import StorageFile
+from joserfc_wrapper import StorageFile, WrapJWK, WrapJWT
 from joserfc_wrapper.cli.GenJWT import GenerateJWT
 
 
@@ -84,7 +84,11 @@ def test_token_exp_twice(cli, capsys):
 
 def test_token_custom_claims(cli, capsys):
     token = cli.token(
-        iss="iss", aud="aud", uid=1, custom={"role": "admin", "uid": 2}
+        iss="iss",
+        aud="aud",
+        uid=1,
+        exp="minutes=5",
+        custom={"role": "admin", "uid": 2},
     )
     cli.show(token=token)
 
@@ -97,7 +101,9 @@ def test_token_custom_claims(cli, capsys):
 def test_token_payload_rotates_keys(cli):
     kids = set()
     for _ in range(3):
-        token = cli.token(iss="iss", aud="aud", uid=1, payload=2)
+        token = cli.token(
+            iss="iss", aud="aud", uid=1, exp="minutes=5", payload=2
+        )
         kids.add(token.split(".")[0])
 
     assert len(kids) == 2
@@ -134,6 +140,7 @@ def test_token_bad_custom(cli, capsys):
         iss="iss",
         aud="aud",
         uid=1,
+        exp="minutes=5",
         custom=custom,
     )
 
@@ -144,19 +151,66 @@ def test_token_bad_custom(cli, capsys):
 )
 def test_token_bad_payload(cli, capsys, payload, error):
     assert_fails(
-        capsys, error, cli.token, iss="iss", aud="aud", uid=1, payload=payload
+        capsys,
+        error,
+        cli.token,
+        iss="iss",
+        aud="aud",
+        uid=1,
+        exp="minutes=5",
+        payload=payload,
     )
 
 
 def test_token_bad_claims(cli, capsys):
     uid: Any = "1"
     assert_fails(
-        capsys, "CreateTokenException", cli.token, iss="iss", aud="aud", uid=uid
+        capsys,
+        "CreateTokenException",
+        cli.token,
+        iss="iss",
+        aud="aud",
+        uid=uid,
+        exp="minutes=5",
+    )
+
+
+def test_token_requires_exp(cli, capsys):
+    assert_fails(
+        capsys, "--exp is required", cli.token, iss="iss", aud="aud", uid=1
+    )
+
+
+def test_check_shows_reason(cli, capsys):
+    token = cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5")
+
+    assert_fails(
+        capsys,
+        "Token is invalid. TokenClaimError",
+        cli.check,
+        iss="iss",
+        aud="other",
+        token=token,
+    )
+
+
+def test_check_token_without_exp(cli, capsys, tmp_path):
+    """Tokens without exp (created by the library) are invalid"""
+    jwt = WrapJWT(WrapJWK(StorageFile(str(tmp_path))))
+    token = jwt.create({"iss": "iss", "aud": "aud", "uid": 1})
+
+    assert_fails(
+        capsys,
+        "Missing claim: 'exp'",
+        cli.check,
+        iss="iss",
+        aud="aud",
+        token=token,
     )
 
 
 def test_check_invalid_claims(cli, capsys):
-    token = cli.token(iss="iss", aud="aud", uid=1)
+    token = cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5")
 
     assert_fails(
         capsys,

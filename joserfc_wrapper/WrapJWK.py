@@ -8,6 +8,7 @@ from joserfc.jwk import ECKey, OctKey
 from joserfc_wrapper.Exceptions import (
     GenerateKeysError,
     KeysLoadError,
+    KeysNotFoundError,
     KeysNotLoadedError,
     KeysSaveError,
     ObjectTypeError,
@@ -204,11 +205,19 @@ class WrapJWK:
 
         :param kid: Unique key ID, default the last keys
         :type str:
-        :raises KeysLoadError: missing keys or storage error
+        :raises KeysNotFoundError: the keys do not exist in the storage
+        :raises KeysLoadError: storage error or invalid keys
         """
+        try:
+            loaded_kid, result = self.__storage.load_keys(kid=kid)
+        except WrapperErrors:
+            raise
+        except self.__storage.not_found_errors as e:
+            raise KeysNotFoundError(f"{type(e).__name__}: {e}") from e
+        except Exception as e:
+            raise KeysLoadError(f"{type(e).__name__}: {e}") from e
 
         def load() -> tuple[str, dict, dict, dict, int]:
-            loaded_kid, result = self.__storage.load_keys(kid=kid)
             data = result["data"]
             return (
                 loaded_kid,

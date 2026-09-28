@@ -46,17 +46,16 @@ jwk = WrapJWK(storage)
 jwk.generate_keys()
 jwk.save_keys()
 
-# create a token, it expires after 1 hour
-jwt = WrapJWT(jwk)
-token = jwt.create(
-    claims={"iss": "https://example.com", "aud": "auditor", "uid": 123},
-    exp=3600,
+# the rules of your tokens, tokens expire after 1 hour
+jwt = WrapJWT(
+    jwk, issuer="https://example.com", audience="api", default_exp=3600
 )
 
-# verify the signature and the claims
-decoded = jwt.decode(token)
-if jwt.validate(decoded, {"iss": "https://example.com", "aud": "auditor"}):
-    print(decoded.claims)
+# create a token ('iss', 'aud', 'exp' and 'jti' are added automatically)
+token = jwt.create(claims={"uid": 123})
+
+# verify the signature, exp, iss and aud, raises InvalidTokenError
+print(jwt.verify(token).claims)
 ```
 
 ## Custom storage
@@ -72,6 +71,7 @@ implementations.
 - [Library](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md)
 - [CLI](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/cli.md)
 - [Security notes for developers](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/security.md)
+- [Upgrading from 0.3.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md#upgrading-from-03x)
 - [Upgrading from 0.2.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md#upgrading-from-02x)
 
 ## License

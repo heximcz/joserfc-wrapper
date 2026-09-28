@@ -43,8 +43,9 @@ genjw keys
 Create JWT token
 
 ```bash
-# Minimal
-genjw token --iss="https://example.tld" --aud="auditor" --uid=123
+# Minimal (--exp is required)
+genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
+    --exp="hours=1"
 # Full
 genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
     --exp="minutes=10" --custom="{var1:value1,var2:value2}" --payload=10
@@ -93,7 +94,7 @@ Create JWT token
 
 ```bash
 genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
-    --storage=file
+    --exp="hours=1" --storage=file
 ```
 
 Validate JWT token
@@ -111,9 +112,9 @@ genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --header=True --storage=file
 
 ## Token options
 
-- `--exp` - the token expires after the given time, units: `seconds`,
-  `minutes`, `hours`, `days`, `weeks`, for example `--exp="hours=2"`.
-  Without `--exp` the token is valid as long as its signing key exists.
+- `--exp` (required) - the token expires after the given time, units:
+  `seconds`, `minutes`, `hours`, `days`, `weeks`, for example
+  `--exp="hours=2"`. A token without expiration is invalid.
 - `--custom` - other claims, they do not override the required claims.
 - `--payload` - the maximum number of tokens signed by a key, 0 (default) =
   unlimited. When the key reaches it, a new signature key is generated
@@ -127,11 +128,14 @@ Errors are printed to stderr and the command exits with code 1. Exceptions
 are printed in the format `exception name: error`. For instance:
 
 ```bash
-BadSignatureError: bad_signature:
-# or
-TokenDecodeError: Invalid token format.
-# or for a valid token with not matching claims or an expired token
-Token is invalid.
+Error: --exp is required, e.g. --exp="hours=1". A token without expiration is invalid.
+# genjw check prints the reason of an invalid token
+Token is invalid. TokenExpiredError: Token has expired.
+Token is invalid. TokenClaimError: Invalid claim in token.: Invalid claim: 'aud'
+Token is invalid. TokenSignatureError: Invalid token signature.
 ```
+
+`genjw check` verifies the signature, `exp` (required), `nbf`, `iss` and
+`aud` (`--iss`, `--aud`).
 
 [< back to index](./index.md)
