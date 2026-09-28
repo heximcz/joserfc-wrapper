@@ -71,6 +71,7 @@ implementations.
 
 - [Library](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md)
 - [CLI](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/cli.md)
+- [Security notes for developers](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/security.md)
 - [Upgrading from 0.2.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md#upgrading-from-02x)
 
 ## License
