@@ -102,9 +102,9 @@ jobs:
 
           # only the library is published, never docker/, Makefile, tests or docs
           allowed = re.compile(
-              r"^(joserfc_wrapper/.*\.py"
+              r"^(joserfc_wrapper/(.*\.py|py\.typed)"
               r"|joserfc_wrapper-[^/]+\.dist-info/.*"
-              r"|joserfc_wrapper-[^/]+/(joserfc_wrapper/.*\.py"
+              r"|joserfc_wrapper-[^/]+/(joserfc_wrapper/(.*\.py|py\.typed)"
               r"|README\.md|LICENSE|pyproject\.toml|PKG-INFO))$"
           )
           names = []
