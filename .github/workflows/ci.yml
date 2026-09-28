@@ -1,7 +1,7 @@
 # Lint and tests for pushes to main and pull requests. Also called by the
 # publish workflow before a release.
 
-name: ci
+name: CI
 
 on:
   push:
@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
   lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -53,7 +54,7 @@ jobs:
         run: npx --yes markdownlint-cli2 README.md docs/*.md
 
   test:
-    name: test (python ${{ matrix.python-version }})
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
