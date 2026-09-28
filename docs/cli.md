@@ -1,4 +1,4 @@
-# Documentation for CLI
+# CLI
 
 The library includes the `genjw` command for creating new signature keys and
 tokens or verifying existing ones.
@@ -138,4 +138,6 @@ Token is invalid. TokenSignatureError: Invalid token signature.
 `genjw check` verifies the signature, `exp` (required), `nbf`, `iss` and
 `aud` (`--iss`, `--aud`).
 
-[< back to index](./index.md)
+[< Previous: Security notes for developers](./security.md) |
+[Contents](./index.md) |
+[Next: Upgrading >](./upgrading.md)

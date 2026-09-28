@@ -1,0 +1,66 @@
+# Tokens
+
+How tokens look like and how to create them.
+
+## Header and claims in this wrapper
+
+```python
+# decoded header (all created automatically)
+{
+    "typ": "JWT",
+    "alg": "ES256",
+    "kid": "cdfef1a0e8414b25a593e50c47e59dcb",  # Key ID
+}
+# decoded claims
+{
+    "iss": "https://example.com",  # required, str (or issuer of WrapJWT)
+    "aud": "api",  # required, str or list (or audience of WrapJWT)
+    "uid": 123,  # required, int
+    "jti": "5b0be60b1c91438e9f5c0a6c1b2d3e4f",  # unique token ID, automatic
+    "iat": 1705418960,  # created automatically
+    "exp": 1705422560,  # expiration, required by verify
+}
+```
+
+Other claims are added to the token unchanged.
+
+## Configure tokens
+
+Set the rules of your tokens once, `create` and `verify` use them:
+
+```python
+myjwt = WrapJWT(
+    wrapjwk=myjwk,
+    issuer="https://example.com",  # 'iss', required by verify
+    audience="api",  # 'aud', str or list of allowed values, required by verify
+    default_exp=3600,  # create without exp: the token expires after 1 hour
+    max_age=None,  # optional: a token is expired max_age seconds after 'iat'
+    leeway=0,  # tolerance of clocks in seconds
+)
+```
+
+## Create token
+
+```python
+try:
+    # a new token is always signed by the last keys in the storage,
+    # 'iss' and 'aud' are added from WrapJWT, 'jti' is added automatically
+    token = myjwt.create(claims={"uid": 123})
+    print(f"Token: {token[:20]}..., Length: {len(token)} bytes")
+except Exception as e:
+    print(f"{type(e).__name__}: {e}")
+```
+
+- `exp` (seconds) overrides `default_exp`: `myjwt.create(claims, exp=600)`.
+  The `exp` claim can be also set directly in claims, but not both.
+- A token without `exp` is invalid for `verify`, create tokens with `exp`
+  or set `default_exp`.
+- `iss` or `aud` in claims must match `issuer` and `audience` of WrapJWT,
+  otherwise `CreateTokenException`.
+- `jti` (unique token ID) is added when it is not in the claims, a custom
+  `jti` must be a non-empty string. `myjwt.get_jti(token)` returns it after
+  verifying the signature, for example for logging.
+
+[< Previous: Signature keys](./keys.md) |
+[Contents](./index.md) |
+[Next: Verifying tokens >](./verify.md)

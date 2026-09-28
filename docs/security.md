@@ -1,7 +1,6 @@
 # Security notes for developers
 
 What to watch out for when you use `joserfc-wrapper` to protect an API.
-Valid for version 0.4.0.
 
 ## 1. Use `verify`, never `decode` alone
 
@@ -36,7 +35,7 @@ Use a short `exp` for API tokens, a token cannot be revoked one by one
 A JWT is signed, not encrypted. Anyone who has the token can read its claims
 without any key. Do not put passwords, personal data or other secrets into
 claims. Encrypt them by `WrapJWE`, see [Create token with encrypted
-data](./index.md#create-token-with-encrypted-data).
+data](./jwe.md#create-token-with-encrypted-data).
 
 ## 4. Access to the storage means the ability to sign tokens
 
@@ -118,4 +117,6 @@ failure, never the whole token.
 - `max_versions` limits only the history of each key record (the counter is
   written for every token), the current version is never deleted.
 
-[< back to index](./index.md)
+[< Previous: Encrypted data (JWE)](./jwe.md) |
+[Contents](./index.md) |
+[Next: CLI >](./cli.md)
