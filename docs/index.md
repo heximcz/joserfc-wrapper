@@ -1,6 +1,6 @@
 # Documentation
 
-Documentation for version 0.3.0. Requires Python 3.10 or newer.
+Documentation for version 0.3.1. Requires Python 3.10 or newer.
 
 Before using the library to protect an API, read the
 [security notes for developers](./security.md).

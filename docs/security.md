@@ -1,7 +1,7 @@
 # Security notes for developers
 
 What to watch out for when you use `joserfc-wrapper` to protect an API.
-Valid for version 0.3.0.
+Valid for version 0.3.1.
 
 ## 1. `decode` is not enough, always call `validate`
 
