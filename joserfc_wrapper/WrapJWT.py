@@ -43,22 +43,16 @@ class WrapJWT:
     ) -> None:
         """
         :param wrapjwk: keys of the storage
-        :type WrapJWK:
         :param issuer: expected 'iss' claim, required by 'verify', added
             to the claims by 'create'
-        :type str | None:
         :param audience: allowed 'aud' value(s), required by 'verify',
             added to the claims by 'create'
-        :type str | list[str] | None:
         :param default_exp: 'create' without 'exp' sets the expiration
             after this number of seconds
-        :type int | None:
         :param max_age: a token is expired this number of seconds after
             'iat', even with a later 'exp'
-        :type int | None:
         :param leeway: tolerance of clocks in seconds for 'exp', 'nbf',
             'iat' and 'max_age'
-        :type int:
         :raises ObjectTypeError: wrapjwk is not WrapJWK
         :raises ConfigurationError: invalid parameters
         """
@@ -87,14 +81,12 @@ class WrapJWT:
         'verify' to check a token.
 
         :param token: Token to decode
-        :type str:
         :returns: object
-        :rtype Token:
-        :raise TokenDecodeError: malformed token
-        :raise TokenKidInvalidError: missing or invalid KID
-        :raise KeysNotFoundError: KID is not in the storage
-        :raise KeysLoadError: storage error
-        :raise JoseError: invalid signature
+        :raises TokenDecodeError: malformed token
+        :raises TokenKidInvalidError: missing or invalid KID
+        :raises KeysNotFoundError: KID is not in the storage
+        :raises KeysLoadError: storage error
+        :raises JoseError: invalid signature
         """
         kid = read_kid(token)
         self.__kid = kid
@@ -110,17 +102,14 @@ class WrapJWT:
         A token without 'exp' is invalid.
 
         :param token: Token to verify
-        :type str:
         :param claims: other claims which must be equal in the token
-        :type dict | None:
         :returns: valid token
-        :rtype Token:
-        :raise ConfigurationError: 'issuer' or 'audience' is not set
-        :raise InvalidTokenError: invalid token (HTTP 401), one of
+        :raises ConfigurationError: 'issuer' or 'audience' is not set
+        :raises InvalidTokenError: invalid token (HTTP 401), one of
             TokenDecodeError, TokenKidInvalidError, TokenKidUnknownError,
             TokenSignatureError, TokenExpiredError, TokenNotYetValidError,
             TokenClaimError
-        :raise KeysLoadError: storage error (HTTP 500)
+        :raises KeysLoadError: storage error (HTTP 500)
         """
         if self.issuer is None or self.audience is None:
             raise ConfigurationError(
@@ -146,11 +135,8 @@ class WrapJWT:
         checked only when they are set.
 
         :param token: Decoded token (call this after decode)
-        :type Token:
         :param claims: Claims which must be equal in token
-        :type dict:
         :returns: False when the token is invalid
-        :rtype bool:
         """
         warnings.warn(
             "WrapJWT.validate is deprecated, use WrapJWT.verify",
@@ -174,18 +160,14 @@ class WrapJWT:
         the claims.
 
         :param claims:
-        :type dict:
         :param payload: 0 = unlimited. In case it is set, it checks how many
             times the key has been used for signing tokens. If the value
             is exceeded, a new key is automatically generated.
-        :type int:
         :param exp: token expires after this number of seconds, sets the
             'exp' claim, default 'default_exp' of WrapJWT, None = no
             expiration (or 'exp' in claims)
-        :type int | None:
         :raises CreateTokenException:
         :returns: jwt token
-        :rtype str:
         """
         # do not modify the caller's claims
         claims = dict(claims)
@@ -219,12 +201,12 @@ class WrapJWT:
         Return the unique token ID ('jti') after verifying the signature
 
         :param token: token
-        :type str:
         :returns: jti
-        :rtype str:
-        :raise TokenClaimError: the token has no 'jti'
-        :raise TokenDecodeError, TokenKidInvalidError, KeysLoadError,
-            JoseError: see 'decode'
+        :raises TokenClaimError: the token has no 'jti'
+        :raises TokenDecodeError: malformed token
+        :raises TokenKidInvalidError: missing or invalid KID
+        :raises KeysLoadError: KID is not in the storage or storage error
+        :raises JoseError: invalid signature
         """
         jti = self.decode(token).claims.get("jti")
         if not isinstance(jti, str) or not jti:
@@ -235,7 +217,7 @@ class WrapJWT:
         """
         Check claims of a decoded token (shared by 'verify' and 'validate')
 
-        :raise InvalidTokenError: invalid claims
+        :raises InvalidTokenError: invalid claims
         """
         options: dict[str, ClaimsOption] = {
             "exp": {"essential": True},
@@ -304,9 +286,7 @@ class WrapJWT:
         Checks if the claims contains all required keys with valid types.
 
         :param claims:
-        :type dict:
         :raises CreateTokenException: invalid claims
-        :returns None:
         """
         required_keys = {
             "iss": str,  # Issuer expected to be a string

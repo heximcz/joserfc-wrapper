@@ -13,7 +13,6 @@ class WrapJWE:
     def __init__(self, wrapjwk: WrapJWK) -> None:
         """
         :param wrapjwk: for non vault storage
-        :type WrapJWK:
         """
         if not isinstance(wrapjwk, WrapJWK):
             raise ObjectTypeError
@@ -24,12 +23,9 @@ class WrapJWE:
         Encrypt string or bytes with key
 
         :param data: Secret string or bytes
-        :type str | bytes:
         :param kid: Key ID, default the last key
-        :type str:
         :returns: Encrypted string, the header contains KID of the used key
-        :rtype str:
-        :raise TypeError:
+        :raises TypeError:
         """
         if isinstance(data, (str, bytes)):
             self.__load_keys(kid)
@@ -47,15 +43,12 @@ class WrapJWE:
         Decrypt string with key
 
         :param data: Encrypted string
-        :type str:
         :param kid: Key ID, default KID from the header of the data,
             the last key for data without KID in the header
-        :type str:
         :returns: Decrypted data
-        :rtype bytes | None:
-        :raise TypeError:
-        :raise TokenDecodeError: malformed data
-        :raise TokenKidInvalidError: invalid KID in the header
+        :raises TypeError:
+        :raises TokenDecodeError: malformed data
+        :raises TokenKidInvalidError: invalid KID in the header
         """
         if isinstance(data, str):
             if not kid:

@@ -29,17 +29,18 @@ class AbstractKeyStorage(ABC):
         The implementation of this abstract method should include
         a call methods 'get_last_kid' defined in this class.
 
-        For example:
-        def load_keys(self, kid: str):
-            if kid == "":
-                kid = self.get_last_kid()
-            # More logic...
+        For example::
+
+            def load_keys(self, kid: str):
+                if kid == "":
+                    kid = self.get_last_kid()
+                # More logic...
 
         :param kid: Key ID
         :type kid: str
         :returns: Key ID, Keys (by default last keys)
         :rtype: tuple[str, dict]
-        :raises Any:
+        :raises: Any
         """
         pass
 

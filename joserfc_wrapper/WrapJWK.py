@@ -25,7 +25,6 @@ class WrapJWK:
     def __init__(self, storage: AbstractKeyStorage) -> None:
         """
         :param storage: Storage object
-        :type AbstractKeyStorage:
         """
         if not isinstance(storage, AbstractKeyStorage):
             raise ObjectTypeError
@@ -106,7 +105,6 @@ class WrapJWK:
         Generate keys
 
         :raises GenerateKeysError:
-        :returns None:
         """
         try:
             # generate keys
@@ -153,7 +151,6 @@ class WrapJWK:
         atomic 'increase_counter' and 'replace_last_keys').
 
         :param payload: 0 = unlimited, otherwise max tokens signed by a key
-        :type int:
         :raises KeysLoadError:
         :raises KeysSaveError: the storage failed or the keys were rotated
             by other processes too many times in a row
@@ -204,7 +201,6 @@ class WrapJWK:
         Load keys and counter from a storage
 
         :param kid: Unique key ID, default the last keys
-        :type str:
         :raises KeysNotFoundError: the keys do not exist in the storage
         :raises KeysLoadError: storage error or invalid keys
         """

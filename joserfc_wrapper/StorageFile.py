@@ -21,7 +21,6 @@ class StorageFile(AbstractKeyStorage):
     def __init__(self, cert_dir: str) -> None:
         """
         :param cert_dir: - path to the directory with certificates
-        :type str:
         """
         self.__cert_dir = cert_dir
         # file name for save last keys ID - default "last-key-id"

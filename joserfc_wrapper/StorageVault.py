@@ -25,15 +25,11 @@ class StorageVault(AbstractKeyStorage):
         Handles for HashiCorp Vault Storage
 
         :param url: - Vault URL
-        :type str:
         :param token: - Token
-        :type str:
         :param mount: - Vault mount point
-        :type str:
         :param kv_version: - version of the KV secrets engine, 2 (default)
             uses check-and-set and is safe for concurrent processes,
             1 is for keys saved by older versions and is not atomic
-        :type int:
         :raises ValueError: unsupported kv_version
         """
         if kv_version not in (1, 2):
