@@ -10,10 +10,12 @@ It is not part of the published package and must not be used in production.
 - `vault` - HashiCorp Vault in dev mode (in-memory storage, root token
   `dev-root`), available on `127.0.0.1:8200`.
 - `vault-init` - creates the KV mounts `jwt` (KV v2) and `jwt-v1` (KV v1).
+- `redis` - Redis 6.2 (the oldest supported version) without persistence,
+  available on `127.0.0.1:6379`.
 
 The `dev` container has `VAULT_ADDR`, `VAULT_TOKEN`, `VAULT_MOUNT`,
-`VAULT_MOUNT_V1` and `CERT_DIR` set, so `genjw` and the Vault tests work
-without any configuration.
+`VAULT_MOUNT_V1`, `CERT_DIR` and `REDIS_URL` set, so `genjw` and the Vault
+and Redis tests work without any configuration.
 
 ## Usage
 
@@ -24,9 +26,10 @@ make build        # build the image
 make up           # start in foreground
 make up-daemon    # start in background
 make down         # stop and remove containers
-make test         # run all tests including Vault
+make test         # run all tests including Vault and Redis
 make test t=tests/test_jwt.py args="-k decode"
 ```
 
 Another Python version can be used by
-`PYTHON_VERSION=3.13 make build`.
+`PYTHON_VERSION=3.13 make build`, another Redis version by
+`REDIS_VERSION=8 make up`.

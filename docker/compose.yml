@@ -18,9 +18,23 @@ services:
       VAULT_MOUNT: jwt
       VAULT_MOUNT_V1: jwt-v1
       CERT_DIR: /keys
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       vault-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  # 6.2 = the oldest supported version, another: REDIS_VERSION=8 make up
+  redis:
+    image: redis:${REDIS_VERSION:-6.2}-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
 
   vault:
     image: hashicorp/vault:2.1

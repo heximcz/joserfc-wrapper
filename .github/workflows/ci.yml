@@ -94,11 +94,23 @@ jobs:
           --health-interval 2s
           --health-timeout 2s
           --health-retries 15
+      # Redis for the Redis tests (tests marked "redis"), the oldest
+      # supported version 6.2 with the oldest Python
+      redis:
+        image: redis:${{ matrix.python-version == '3.10' && '6.2' || '8' }}-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
     env:
       VAULT_ADDR: http://127.0.0.1:8200
       VAULT_TOKEN: dev-root
       VAULT_MOUNT: jwt
       VAULT_MOUNT_V1: jwt-v1
+      REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - uses: actions/checkout@v7
 

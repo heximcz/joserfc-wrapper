@@ -17,6 +17,6 @@ down:
 build:
 	$(COMPOSE) build
 
-# all tests including Vault, part: make test t=tests/test_jwt.py args="-k decode"
+# all tests including Vault and Redis, part: make test t=tests/test_jwt.py args="-k decode"
 test:
 	$(COMPOSE) run --rm dev pytest $(t) $(args)
