@@ -5,11 +5,11 @@ It is not part of the published package and must not be used in production.
 
 ## Services
 
-- `dev` - Python 3.10 (the oldest supported version) with the project and dev
+- `dev` - Python 3.11 (the oldest supported version) with the project and dev
   dependencies installed by Poetry, the source code is mounted to `/app`.
 - `vault` - HashiCorp Vault in dev mode (in-memory storage, root token
   `dev-root`), available on `127.0.0.1:8200`.
-- `vault-init` - creates the KV mounts `jwt` (KV v2) and `jwt-v1` (KV v1).
+- `vault-init` - creates the KV v2 mount `jwt`.
 - `redis` - Redis 6.2 (the oldest supported version) without persistence,
   available on `127.0.0.1:6379`.
 - `redis-c1`, `redis-c2`, `redis-c3` and `redis-cluster-init` - Redis
@@ -17,7 +17,7 @@ It is not part of the published package and must not be used in production.
   `redis.RedisCluster`.
 
 The `dev` container has `VAULT_ADDR`, `VAULT_TOKEN`, `VAULT_MOUNT`,
-`VAULT_MOUNT_V1`, `CERT_DIR`, `REDIS_URL` and `REDIS_CLUSTER_URL` set, so
+`CERT_DIR`, `REDIS_URL` and `REDIS_CLUSTER_URL` set, so
 `genjw` and the Vault and Redis tests work without any configuration.
 
 ## Usage

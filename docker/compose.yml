@@ -6,7 +6,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       args:
-        PYTHON_VERSION: ${PYTHON_VERSION:-3.10}
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
     volumes:
       - ..:/app
       # keep the host .venv out of the container
@@ -16,7 +16,6 @@ services:
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: dev-root
       VAULT_MOUNT: jwt
-      VAULT_MOUNT_V1: jwt-v1
       CERT_DIR: /keys
       REDIS_URL: redis://redis:6379/0
       REDIS_CLUSTER_URL: redis://redis-c1:7001
@@ -111,7 +110,7 @@ services:
       redis-c3:
         condition: service_healthy
 
-  # jwt = KV v2 (default of StorageVault), jwt-v1 = KV v1 (older versions)
+  # the KV v2 mount jwt for StorageVault
   vault-init:
     image: hashicorp/vault:2.1
     environment:
@@ -122,9 +121,7 @@ services:
       - -c
       - >-
         vault secrets list | grep -q '^jwt/' ||
-        vault secrets enable -path=jwt -version=2 kv;
-        vault secrets list | grep -q '^jwt-v1/' ||
-        vault secrets enable -path=jwt-v1 -version=1 kv
+        vault secrets enable -path=jwt -version=2 kv
     depends_on:
       vault:
         condition: service_healthy

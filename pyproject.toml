@@ -6,10 +6,10 @@ authors = [{ name = "Lubomir Spacek", email = "hexim@hexim.cz" }]
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.10,<4.0"
+requires-python = ">=3.11,<4.0"
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -18,8 +18,7 @@ classifiers = [
 # keep requirements.txt in sync
 dependencies = [
     "joserfc>=1.7.5,<2.0.0",
-    "hvac[parser]>=2.4.0,<3.0.0",
-    # StorageJWKS (also required by hvac)
+    # StorageJWKS
     "requests>=2.27.1,<3.0.0",
     "fire>=0.7.1,<0.8.0",
 ]
@@ -27,8 +26,7 @@ dependencies = [
 [project.optional-dependencies]
 # StorageRedis: pip install joserfc-wrapper[redis]
 redis = ["redis>=5.0.0,<9.0.0"]
-# StorageVault: pip install joserfc-wrapper[vault] (hvac is also in the
-# dependencies until 1.0.0)
+# StorageVault: pip install joserfc-wrapper[vault]
 vault = ["hvac[parser]>=2.4.0,<3.0.0"]
 
 [project.scripts]
@@ -45,6 +43,8 @@ packages = [{ include = "joserfc_wrapper" }]
 exclude = ["docker", "Makefile"]
 
 [tool.poetry.group.dev.dependencies]
+# the optional dependencies of the storages, for the tests
+hvac = { version = ">=2.4.0,<3.0.0", extras = ["parser"] }
 black = "^26.5.1"
 pytest = "^9.1.1"
 tox = "^4.64.3"

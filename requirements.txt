@@ -1,6 +1,7 @@
 joserfc>=1.7.5,<2.0.0
-hvac[parser]>=2.4.0,<3.0.0
 requests>=2.27.1,<3.0.0
 fire>=0.7.1,<0.8.0
+# optional, only for StorageVault (extra "vault")
+# hvac[parser]>=2.4.0,<3.0.0
 # optional, only for StorageRedis (extra "redis")
 # redis>=5.0.0,<9.0.0
