@@ -26,6 +26,7 @@ from .AbstractKeyStorage import AbstractKeyStorage
 from .StorageVault import StorageVault
 from .StorageFile import StorageFile
 from .StorageRedis import StorageRedis
+from .StorageJWKS import StorageJWKS
 from .WrapJWK import WrapJWK
 from .WrapJWT import WrapJWT
 from .WrapJWE import WrapJWE
@@ -55,6 +56,7 @@ __all__ = [
     "StorageVault",
     "StorageFile",
     "StorageRedis",
+    "StorageJWKS",
     "WrapJWK",
     "WrapJWT",
     "WrapJWE",

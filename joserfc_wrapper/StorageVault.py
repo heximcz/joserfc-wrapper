@@ -4,7 +4,7 @@ import warnings
 
 import hvac
 from hvac.exceptions import InvalidPath, InvalidRequest
-from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
+from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage, KEY_CACHE_TTL
 from joserfc_wrapper.Exceptions import KeysSaveError
 from joserfc_wrapper.TokenHeader import is_valid_kid, jti_digest
 
@@ -23,6 +23,7 @@ class StorageVault(AbstractKeyStorage):
         token: str = "",
         mount: str = "",
         kv_version: int = 2,
+        key_cache_ttl: int = KEY_CACHE_TTL,
     ) -> None:
         """
         Handles for HashiCorp Vault Storage
@@ -34,8 +35,12 @@ class StorageVault(AbstractKeyStorage):
             uses check-and-set and is safe for concurrent processes,
             1 is for keys saved by older versions, is not atomic and is
             deprecated (removed in 1.0.0)
-        :raises ValueError: unsupported kv_version
+        :param key_cache_ttl: lifetime of cached verification keys in
+            seconds (default 300, 0 = no cache), see
+            'AbstractKeyStorage.load_verification_key'
+        :raises ValueError: unsupported kv_version, invalid key_cache_ttl
         """
+        self.key_cache_ttl = key_cache_ttl
         if kv_version not in (1, 2):
             raise ValueError("kv_version must be 1 or 2")
         if kv_version == 1:

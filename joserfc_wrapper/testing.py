@@ -30,8 +30,9 @@ def check_storage(storage: AbstractKeyStorage, atomic: bool = True) -> None:
     """
     Run all checks supported by the storage
 
-    Listing and deleting keys and token revocation are checked only when
-    the storage implements them.
+    Verification keys and their cache are always checked. Listing and
+    deleting keys, JWKS and token revocation are checked only when the
+    storage implements them.
 
     :param storage: storage to check
     :param atomic: check concurrent changes ('increase_counter',
@@ -40,6 +41,7 @@ def check_storage(storage: AbstractKeyStorage, atomic: bool = True) -> None:
     :raises AssertionError: the storage breaks the contract
     """
     check_keys(storage)
+    check_verification_keys(storage)
     check_counter(storage)
     check_metadata(storage)
     check_replace_last_keys(storage)
@@ -48,6 +50,7 @@ def check_storage(storage: AbstractKeyStorage, atomic: bool = True) -> None:
         check_concurrent_counter(storage)
     if supports_listing(storage):
         check_list_and_delete(storage)
+        check_jwks(storage)
     if storage.supports_token_revocation():
         check_token_revocation(storage)
 
@@ -97,6 +100,29 @@ def check_keys(storage: AbstractKeyStorage) -> None:
         )
     else:
         raise AssertionError("load_keys of a missing Key ID must raise")
+
+
+def check_verification_keys(storage: AbstractKeyStorage) -> None:
+    """load_verification_key (cached) and clear_key_cache"""
+    kid = save_new_keys(storage)
+
+    public, revoked = storage.load_verification_key(kid)
+    assert public == new_record()["keys"]["public"], "the public key"
+    assert revoked is None
+
+    storage.update_metadata(kid, {"revoked": 123})
+    storage.clear_key_cache(kid)
+    assert storage.load_verification_key(kid)[1] == 123, "revoked after clear"
+
+    missing = uuid.uuid4().hex
+    try:
+        storage.load_verification_key(missing)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        assert not storage.not_found_errors or isinstance(
+            e, storage.not_found_errors
+        ), f"missing keys raise 'not_found_errors', got {type(e).__name__}"
+    else:
+        raise AssertionError("a missing Key ID must raise")
 
 
 def check_counter(storage: AbstractKeyStorage) -> None:
@@ -192,6 +218,59 @@ def check_list_and_delete(storage: AbstractKeyStorage) -> None:
         pass
     else:
         raise AssertionError("delete_keys must refuse an invalid Key ID")
+
+
+def check_jwks(storage: AbstractKeyStorage) -> None:
+    """load_jwks: all keys except revoked keys, no private keys"""
+    kid = save_new_keys(storage)
+    revoked = save_new_keys(storage)
+    storage.update_metadata(revoked, {"revoked": 123})
+    storage.clear_key_cache(revoked)
+
+    keys = {key["kid"]: key for key in storage.load_jwks()["keys"]}
+
+    assert kid in keys, "the JWKS contains the keys"
+    assert revoked not in keys, "the JWKS does not contain revoked keys"
+    assert keys[kid]["use"] == "sig" and keys[kid]["alg"] == "ES256"
+    for key in keys.values():
+        assert "d" not in key and "private" not in key, "no private keys"
+
+
+def check_read_only_storage(storage: AbstractKeyStorage, kid: str) -> None:
+    """
+    Checks of a storage which only verifies tokens (e.g. StorageJWKS)
+
+    :param storage: storage to check
+    :param kid: Key ID of a valid key in the storage
+    :raises AssertionError: the storage breaks the contract
+    """
+    public, revoked = storage.load_verification_key(kid)
+    assert public.get("kty") and "d" not in public, "a public key"
+    assert revoked is None or isinstance(revoked, int)
+    assert any(key["kid"] == kid for key in storage.load_jwks()["keys"])
+
+    missing = uuid.uuid4().hex
+    try:
+        storage.load_verification_key(missing)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        assert isinstance(e, storage.not_found_errors), (
+            "missing keys raise an error of 'not_found_errors', got "
+            f"{type(e).__name__}"
+        )
+    else:
+        raise AssertionError("a missing Key ID must raise")
+
+    for call in (
+        storage.get_last_kid,
+        lambda: storage.save_keys(missing, new_record()),
+    ):
+        try:
+            call()
+        except NotImplementedError:
+            pass
+        else:
+            raise AssertionError("a read-only storage refuses writes")
+    assert not storage.supports_token_revocation()
 
 
 def check_token_revocation(storage: AbstractKeyStorage) -> None:

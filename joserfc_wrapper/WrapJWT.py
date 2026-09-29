@@ -75,6 +75,7 @@ class WrapJWT:
             raise ObjectTypeError
         self.__jwk: WrapJWK = wrapjwk
         self.__kid: str = ""
+        self.__key_revoked = False
 
         if issuer is not None and (not isinstance(issuer, str) or not issuer):
             raise ConfigurationError("'issuer' must be a non-empty string.")
@@ -127,8 +128,9 @@ class WrapJWT:
         """
         kid = read_kid(token)
         self.__kid = kid
-        self.__load_keys(kid)
-        key = ECKey.import_key(self.__jwk.get_public_key())
+        public, revoked = self.__jwk.load_verification_key(kid)
+        self.__key_revoked = revoked is not None
+        key = ECKey.import_key(public)
         return jwt.decode(token, key, algorithms=["ES256"])
 
     def verify(self, token: str, claims: dict | None = None) -> Token:
@@ -154,7 +156,7 @@ class WrapJWT:
                 "Set 'issuer' and 'audience' of WrapJWT to verify tokens."
             )
         decoded = self.__decode_signed(token)
-        if self.__jwk.is_revoked():
+        if self.__key_revoked:
             raise TokenKeyRevokedError(f"Key ID '{self.__kid}'.")
         self.__check_token_claims(decoded, claims or {})
         if self.revocation:
@@ -550,6 +552,3 @@ class WrapJWT:
                 f"'{name}' must be an integer {minimum} or greater (seconds)."
             )
         return value
-
-    def __load_keys(self, kid: str = "") -> None:
-        self.__jwk.load_keys(kid)

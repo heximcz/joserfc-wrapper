@@ -5,7 +5,7 @@ import json
 import tempfile
 from contextlib import contextmanager
 from typing import Iterator
-from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
+from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage, KEY_CACHE_TTL
 from joserfc_wrapper.TokenHeader import is_valid_kid, jti_digest
 
 try:
@@ -19,10 +19,17 @@ class StorageFile(AbstractKeyStorage):
 
     not_found_errors = (FileNotFoundError,)
 
-    def __init__(self, cert_dir: str) -> None:
+    def __init__(
+        self, cert_dir: str, key_cache_ttl: int = KEY_CACHE_TTL
+    ) -> None:
         """
         :param cert_dir: - path to the directory with certificates
+        :param key_cache_ttl: lifetime of cached verification keys in
+            seconds (default 300, 0 = no cache), see
+            'AbstractKeyStorage.load_verification_key'
+        :raises ValueError: invalid key_cache_ttl
         """
+        self.key_cache_ttl = key_cache_ttl
         self.__cert_dir = cert_dir
         # file name for save last keys ID - default "last-key-id"
         self.last_id_name = "last-key-id"

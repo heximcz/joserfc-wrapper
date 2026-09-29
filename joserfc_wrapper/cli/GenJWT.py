@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """generate jwt for cli"""
 
+import json
 import os
 import sys
+import tempfile
 import fire
 import datetime
 import warnings
@@ -294,6 +296,35 @@ class GenerateJWT:
         if not deleted:
             return "No keys to delete."
         return "Deleted keys: " + ", ".join(deleted)
+
+    def jwks(self, output: str = "") -> str:
+        """
+        Public keys as a JWK Set (JWKS) for services which only verify
+        tokens (StorageJWKS, API gateways), e.g. /.well-known/jwks.json.
+        Never contains private keys.
+
+        Optional arguments:
+            --output=<file>: write the JWKS to a file (atomically, for cron
+              and a web server), otherwise print it
+        """
+        try:
+            document = json.dumps(self.__wjwk.jwks(), indent=2) + "\n"
+            if not output:
+                return document.rstrip("\n")
+            directory = os.path.dirname(os.path.abspath(output))
+            fd, temp = tempfile.mkstemp(dir=directory, prefix=".jwks-")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(document)
+                # public keys, readable by the web server
+                os.chmod(temp, 0o644)
+                os.replace(temp, output)
+            except BaseException:
+                os.unlink(temp)
+                raise
+        except Exception as e:  # pylint: disable=W0718
+            fail_exception(e)
+        return f"JWKS has been saved to '{output}'."
 
     def revoke_token(self, token: str) -> str:
         """

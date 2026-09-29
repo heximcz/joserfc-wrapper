@@ -4,7 +4,7 @@ import json
 import re
 from typing import Any
 
-from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
+from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage, KEY_CACHE_TTL
 from joserfc_wrapper.TokenHeader import is_valid_kid, jti_digest
 
 # the key record is changed by Lua scripts, Redis runs a script atomically
@@ -69,13 +69,23 @@ class StorageRedis(AbstractKeyStorage):
 
     not_found_errors = (RedisKeyNotFoundError,)
 
-    def __init__(self, client: Any, prefix: str = "jwt:") -> None:
+    def __init__(
+        self,
+        client: Any,
+        prefix: str = "jwt:",
+        key_cache_ttl: int = KEY_CACHE_TTL,
+    ) -> None:
         """
         :param client: configured client, e.g. redis.Redis(host=..., port=...,
             password=..., ssl=...) or redis.Redis.from_url(...)
         :param prefix: prefix of all keys, for a shared Redis
+        :param key_cache_ttl: lifetime of cached verification keys in
+            seconds (default 300, 0 = no cache), see
+            'AbstractKeyStorage.load_verification_key'
         :raises ImportError: redis-py is not installed
+        :raises ValueError: invalid key_cache_ttl
         """
+        self.key_cache_ttl = key_cache_ttl
         self.__import_redis()
         self.__client = client
         self.prefix = prefix
@@ -86,7 +96,11 @@ class StorageRedis(AbstractKeyStorage):
 
     @classmethod
     def from_url(
-        cls, url: str, prefix: str = "jwt:", **options: Any
+        cls,
+        url: str,
+        prefix: str = "jwt:",
+        key_cache_ttl: int = KEY_CACHE_TTL,
+        **options: Any,
     ) -> "StorageRedis":
         """
         Create the storage from a URL
@@ -94,12 +108,18 @@ class StorageRedis(AbstractKeyStorage):
         :param url: redis://[[user]:password@]host[:port][/db], rediss:// for
             TLS, unix:///path/to/socket
         :param prefix: prefix of all keys
+        :param key_cache_ttl: lifetime of cached verification keys in
+            seconds (default 300, 0 = no cache)
         :param options: other options of redis.Redis (socket_timeout,
             ssl_ca_certs, health_check_interval, ...)
         :raises ImportError: redis-py is not installed
         """
         redis = cls.__import_redis()
-        return cls(redis.Redis.from_url(url, **options), prefix=prefix)
+        return cls(
+            redis.Redis.from_url(url, **options),
+            prefix=prefix,
+            key_cache_ttl=key_cache_ttl,
+        )
 
     def get_last_kid(self) -> str:
         """Return last Key ID"""

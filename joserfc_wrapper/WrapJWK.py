@@ -187,6 +187,7 @@ class WrapJWK:
                 kid=self.__kid, keys=self.__keys()
             ),
         )
+        self.__storage.clear_key_cache(self.__kid)
 
     def reserve_key(
         self, payload: int = 0, max_key_age: int | None = None
@@ -276,6 +277,38 @@ class WrapJWK:
                 {"revoked": int(time.time())},
             ),
         )
+        # verify in this process rejects the tokens immediately
+        self.__storage.clear_key_cache(kid)
+
+    def load_verification_key(self, kid: str) -> tuple[dict, int | None]:
+        """
+        Return the public key and the time of revocation of a key, cached
+        by the storage ('key_cache_ttl'), used by 'WrapJWT.verify'
+
+        The loaded keys of this object do not change.
+
+        :param kid: Key ID
+        :returns: public key (JWK dict) and revoked (unix timestamp or None)
+        :raises KeysNotFoundError: the keys do not exist in the storage
+        :raises KeysLoadError: storage error or invalid keys
+        """
+        return self.__load(partial(self.__storage.load_verification_key, kid))
+
+    def jwks(self) -> dict:
+        """
+        Return the public keys as a JWK Set (RFC 7517) for other services
+        which verify tokens, e.g. from an endpoint /.well-known/jwks.json
+
+        Contains all keys in the storage except revoked keys (the last and
+        the retired keys, tokens signed by them are valid until they
+        expire), never the private keys or the JWE secret keys. New keys
+        are included immediately after a rotation.
+
+        :returns: {"keys": [{"kid", "kty", "crv", "x", "y", "use", "alg"}]}
+        :raises KeysLoadError: storage error or the storage does not
+            support listing keys (Vault needs the 'list' capability)
+        """
+        return self.__call_storage(KeysLoadError, self.__storage.load_jwks)
 
     def list_keys(self) -> list[dict]:
         """
@@ -352,6 +385,7 @@ class WrapJWK:
                     KeysSaveError,
                     partial(self.__storage.delete_keys, item["kid"]),
                 )
+                self.__storage.clear_key_cache(item["kid"])
                 deleted.append(item["kid"])
         # records of revoked tokens which expired (storages without TTL)
         if self.supports_token_revocation():
@@ -478,9 +512,20 @@ class WrapJWK:
         :raises KeysNotFoundError: the keys do not exist in the storage
         :raises KeysLoadError: storage error
         """
+        loaded_kid, result = self.__load(
+            partial(self.__storage.load_keys, kid=kid)
+        )
+        return loaded_kid, result["data"]
+
+    def __load(self, call: Callable[[], T]) -> T:
+        """
+        Call a loading method of the storage, wrap its errors
+
+        :raises KeysNotFoundError: the keys do not exist in the storage
+        :raises KeysLoadError: storage error
+        """
         try:
-            loaded_kid, result = self.__storage.load_keys(kid=kid)
-            return loaded_kid, result["data"]
+            return call()
         except WrapperErrors:
             raise
         except self.__storage.not_found_errors as e:
