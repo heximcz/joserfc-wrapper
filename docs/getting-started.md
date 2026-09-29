@@ -1,6 +1,6 @@
 # Getting started
 
-Requires Python 3.10 or newer.
+Requires Python 3.11 or newer.
 
 ## Install
 
@@ -9,8 +9,7 @@ pip install joserfc-wrapper
 ```
 
 With HashiCorp Vault or Redis install the optional dependency of the
-storage (the Vault client is installed always until 0.9.x, only with the
-`vault` extra in 1.0.0):
+storage:
 
 ```bash
 pip install "joserfc-wrapper[vault]"
@@ -41,20 +40,19 @@ jwt = WrapJWT(
     jwk, issuer="https://example.com", audience="api", default_exp=3600
 )
 
-# create a token for a user ('iss', 'aud', 'exp' and 'jti' are added
-# automatically)
+# create a token for a user, 'sub' is required ('iss', 'aud', 'exp' and
+# 'jti' are added automatically)
 token = jwt.create(claims={"sub": "123"})
 
-# verify the signature, exp, iss and aud, raises InvalidTokenError
+# verify the signature, exp, iss, aud and sub, raises InvalidTokenError
 print(jwt.verify(token).claims)
 ```
 
 The same with HashiCorp Vault or Redis: use `StorageVault` or
 `StorageRedis` instead of `StorageFile`, see [Storages](./storage.md).
 Create the storage, `WrapJWK` and `WrapJWT` once and share them in the
-application, they are safe for threads. Services which
-only verify tokens can use `StorageJWKS`, see
-[Verifying services (JWKS)](./jwks.md).
+application, they are safe for threads. Services which only verify tokens
+can use `StorageJWKS`, see [Verifying services (JWKS)](./jwks.md).
 
 ## Import
 

@@ -13,8 +13,8 @@ published at `https://<issuer>/.well-known/jwks.json`:
   "keys": [
     {"kid": "8cb0...", "kty": "EC", "crv": "P-256", "x": "...", "y": "...",
      "use": "sig", "alg": "ES256"},
-    {"kid": "2a34...", "kty": "EC", "crv": "P-256", "x": "...", "y": "...",
-     "use": "sig", "alg": "ES256"}
+    {"kid": "Xd9w...", "kty": "OKP", "crv": "Ed25519", "x": "...",
+     "use": "sig", "alg": "Ed25519"}
   ]
 }
 ```
@@ -38,9 +38,10 @@ private keys. With JWKS:
 - **Other technologies.** JWKS is a standard. API gateways (nginx, Kong,
   Traefik, Envoy), services in Go, Node.js or Java and your partners verify
   your tokens with any JWT library, they need only the URL of the JWKS.
-- **Key rotation without coordination.** New keys are in the JWKS
-  immediately after a rotation. The verifiers download the JWKS again when
-  they see an unknown `kid`, nothing has to be sent or restarted.
+- **Key rotation without coordination.** New keys are in the JWKS from an
+  endpoint (see below) immediately after a rotation. The verifiers download
+  the JWKS again when they see an unknown `kid`, nothing has to be sent or
+  restarted.
 - **Performance and availability.** The verifiers keep the JWKS in memory
   and do not read any storage for each request. An outage of Vault does not
   stop verifying tokens.
@@ -77,12 +78,18 @@ def jwks() -> dict:
     return WrapJWK(storage).jwks()
 ```
 
-Or write it to a file served by a web server, for example from cron after
-each rotation (the file is replaced atomically):
+Or write it to a file served by a web server, for example from cron (the
+file is replaced atomically):
 
 ```bash
 genjw jwks --output=/var/www/html/.well-known/jwks.json
 ```
+
+A file is updated only when the command runs. With the automatic rotation
+(`max_key_age`) the new keys sign tokens at once, and the verifiers reject
+them (`TokenKidUnknownError`) until the file is written again. Prefer the
+endpoint, or rotate the keys manually (`genjw rotate`) and write the file
+right after it.
 
 - The JWKS contains all keys in the storage except the revoked keys: the
   last keys and the retired keys. `prune` deletes old keys, see
@@ -112,7 +119,8 @@ verified = myjwt.verify(token)
 ```
 
 - The source is a `https://` URL, or a file (a path or `file://`).
-  `http://` is refused, `allow_http=True` allows it in a trusted network.
+  `http://` is refused, also after a redirect, `allow_http=True` allows it
+  in a trusted network.
 - `ttl` (default 300 seconds): the JWKS is downloaded again after it.
 - `refresh_interval` (default 60 seconds): a token with an unknown `kid`
   (e.g. new keys after a rotation) downloads the JWKS again at once, at most
@@ -150,9 +158,11 @@ storage = StorageJWKS(
 - **A revoked key is rejected after the next download.** A revoked key
   disappears from the JWKS, the verifiers download it again after `ttl` at
   the latest, then `verify` raises `TokenKidUnknownError`. Use a shorter
-  `ttl` for faster reaction.
-- **Only ES256 keys of this library.** Keys of other types in the JWKS are
-  ignored, JWKS of other issuers (OIDC providers) are not supported.
+  `ttl` for faster reaction. When the source is not available, the old JWKS
+  with the revoked key is used up to `max_stale`.
+- **Only ES256 and Ed25519 keys of this library.** Keys of other types in
+  the JWKS (e.g. RSA) are ignored, JWKS of other issuers (OIDC providers)
+  are not supported.
 
 [< Previous: Verifying tokens](./verify.md) |
 [Contents](./index.md) |

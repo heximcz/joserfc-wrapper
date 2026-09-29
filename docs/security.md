@@ -12,14 +12,14 @@ application, or an expired token, passes `decode`.
 # WRONG: an expired token or a token for another audience is accepted
 token = myjwt.decode(raw)
 
-# RIGHT: signature, exp, nbf, iss, aud in one call
+# RIGHT: signature, exp, nbf, iss, aud and sub in one call
 myjwt = WrapJWT(myjwk, issuer="https://example.com", audience="api")
 token = myjwt.verify(raw)  # raises InvalidTokenError for an invalid token
 ```
 
 `verify` raises an exception, it never returns an invalid token. It refuses
 to work without `issuer` and `audience`, so a token for another service
-cannot pass by mistake. `validate` is deprecated since 0.4.0.
+cannot pass by mistake.
 
 ## 2. Every token must expire
 
@@ -77,7 +77,8 @@ only all tokens of a key can be revoked.
   `genjw revoke --kid=<kid> --yes`). All tokens signed by it become invalid,
   new keys are generated when it was the last key. Other processes reject
   them after `key_cache_ttl` (default 300 seconds) at the latest, services
-  with the JWKS after its next download (`ttl`). For an immediate reaction
+  with the JWKS after its next download (`ttl`, up to `max_stale` when the
+  JWKS is not available). For an immediate reaction
   restart the services or lower the times.
 
 ## 6. Encrypted data depend on the keys
@@ -126,17 +127,12 @@ string or its hash: the same token can have two valid signatures, see
   and it is not reliable on NFS.
 - `StorageRedis` changes the keys by atomic Lua scripts. Redis must persist
   the data (AOF or RDB), otherwise a restart of Redis deletes the keys.
-- `StorageVault` with KV v1 is not safe for concurrent processes and is
-  deprecated (removed in 1.0.0), use KV v2.
-- A custom storage is safe for concurrent processes only when it overrides
-  `increase_counter`, `replace_last_keys` and `update_metadata` with atomic
-  implementations.
-- Since 0.8.0 one storage object, `WrapJWK`, `WrapJWT` and `WrapJWE` can be
-  shared by all threads of the application: `create`, `verify`, `decode`,
-  `encrypt` and `decrypt` keep no state. The key management methods of
-  `WrapJWK` (`rotate`, `revoke`, `load_keys`, `generate_keys` and the
-  getters of the loaded keys) keep the loaded keys, use a separate WrapJWK
-  for them (e.g. in a cron job).
+- `StorageVault` uses check-and-set of the KV v2 secrets engine.
+- A custom storage must implement `replace_last_keys` and
+  `update_metadata` atomically, check it by
+  `joserfc_wrapper.testing.check_storage`.
+- One storage object, `WrapJWK`, `WrapJWT` and `WrapJWE` can be shared by
+  all threads of the application, they keep no state.
 
 ## 11. Vault KV v2 settings
 
@@ -144,8 +140,19 @@ string or its hash: the same token can have two valid signatures, see
   Vault deletes old keys and tokens signed by them become invalid.
 - The default lease TTL of the mount does not affect the keys, KV data have
   no lease.
-- `max_versions` limits only the history of each key record (the counter is
-  written for every token), the current version is never deleted.
+- `max_versions` limits only the history of each key record (written by a
+  rotation and a revocation), the current version is never deleted.
+
+## 12. Tokens with unknown Key IDs
+
+A token with a valid `kid` which is not in the storage cannot be cached,
+each such token reads the storage (a request to Vault or Redis) before it
+is rejected (`TokenKidUnknownError`). Anyone can send such tokens.
+
+- Limit the rate of requests with invalid tokens before your API (a
+  reverse proxy, an API gateway), especially with `StorageVault`.
+- Services which only verify tokens can use `StorageJWKS`, it downloads the
+  JWKS for an unknown `kid` at most once in `refresh_interval`.
 
 [< Previous: Encrypted data (JWE)](./jwe.md) |
 [Contents](./index.md) |

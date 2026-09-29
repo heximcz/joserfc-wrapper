@@ -16,26 +16,19 @@ genjw list --help [--storage=file]
 genjw revoke --help [--storage=file]
 genjw prune --help [--storage=file]
 genjw jwks --help [--storage=file]
-genjw upgrade-check --help [--storage=file]
 genjw revoke-token --help [--storage=file]
 ```
 
 ## Vault storage
 
+Requires `pip install "joserfc-wrapper[vault]"` and a KV v2 mount.
 Configure environment
 
 ```bash
 export VAULT_ADDR="http://127.0.0.1:8200"
 export VAULT_MOUNT="<mount>"
 export VAULT_TOKEN="<vault token>"
-# optional, version of the KV secrets engine: 2 (default) or 1
-export VAULT_KV_VERSION=2
 ```
-
-KV v2 is safe for concurrent processes (check-and-set). Use
-`VAULT_KV_VERSION=1` (deprecated, removed in 1.0.0) for keys saved by
-versions older than 0.3.0 in a KV v1
-mount.
 
 The `--storage` switch does not need to be defined in this case since the
 default storage is `vault`.
@@ -62,7 +55,7 @@ genjw token --iss="https://example.tld" --aud="auditor" --sub=123 \
 # eyJ0eXAiOiJKV1QiLCJhbGc...
 ```
 
-Validate JWT token
+Check JWT token
 
 ```bash
 genjw check --iss="https://example.tld" --aud="auditor" \
@@ -106,7 +99,7 @@ genjw token --iss="https://example.tld" --aud="auditor" --sub=123 \
     --exp="hours=1" --storage=file
 ```
 
-Validate JWT token
+Check JWT token
 
 ```bash
 genjw check --iss="https://example.tld" --aud="auditor" \
@@ -143,9 +136,7 @@ genjw token --iss="https://example.tld" --aud="auditor" --sub=123 \
 - `--exp` (required) - the token expires after the given time, units:
   `seconds`, `minutes`, `hours`, `days`, `weeks`, for example
   `--exp="hours=2"`. A token without expiration is invalid.
-- `--sub` - the subject of the token (e.g. a user ID), a string. Recommended,
-  a token without it prints a warning, required in 1.0.0.
-- `--uid` - deprecated since 0.8.0, use `--sub`. An int claim `uid`.
+- `--sub` (required) - the subject of the token (e.g. a user ID), a string.
 - `--token-type` - the kind of the token in the `typ` header, e.g.
   `--token-type="at+jwt"`, see [Token types](./tokens.md#token-types).
   `genjw check --token-type=...` rejects tokens of other types.
@@ -153,8 +144,8 @@ genjw token --iss="https://example.tld" --aud="auditor" --sub=123 \
 - `--max-key-age` - rotate the keys when they are older, for example
   `--max-key-age="days=30"`. The old keys stay in the storage for verifying
   older tokens.
-- `--payload` - deprecated, use `--max-key-age`. The maximum number of
-  tokens signed by a key, 0 (default) = unlimited.
+- `--algorithm` - the algorithm of new keys after a rotation (by
+  `--max-key-age` or of a revoked key): `ES256` (default) or `Ed25519`.
 
 ## Keys
 
@@ -162,8 +153,10 @@ genjw token --iss="https://example.tld" --aud="auditor" --sub=123 \
 # create the first keys or rotate the keys (the same)
 genjw keys
 genjw rotate
+# new keys of the Ed25519 algorithm (default ES256)
+genjw rotate --algorithm=Ed25519
 
-# list all keys: kid, state (last, retired, revoked), times, tokens
+# list all keys: kid, state (last, retired, revoked), algorithm, times
 genjw list
 
 # revoke a key, all tokens signed by it become invalid
@@ -206,25 +199,6 @@ the token expires. `genjw check` rejects revoked tokens
 storages with keys). The application must verify tokens with
 `revocation=True`, see [Revoke tokens](./verify.md#revoke-tokens).
 
-## Upgrade check
-
-Before the upgrade to 1.0.0, check the storage, the environment and tokens
-created by your application (only in the 0.9.x series):
-
-```bash
-genjw upgrade-check
-genjw upgrade-check --token="<token>" --lifetime="days=1" --storage=file
-# more tokens separated by commas
-genjw upgrade-check --token="<token1>,<token2>"
-```
-
-- `BLOCKER` - stops working after the upgrade (e.g. Python 3.10, Vault KV
-  v1, tokens without `sub`), the command exits with code 1.
-- `WARNING` - a recommendation (e.g. the `vault` extra, old keys without
-  metadata, keys which `prune` would delete with `--lifetime`).
-
-See [Preparing for 1.0.0](./upgrading.md#preparing-for-100).
-
 ## Errors
 
 Errors are printed to stderr and the command exits with code 1. Exceptions
@@ -239,7 +213,8 @@ Token is invalid. TokenSignatureError: Invalid token signature.
 ```
 
 `genjw check` verifies the signature, `exp` (required), `nbf`, `iss`,
-`aud` (`--iss`, `--aud`) and whether the token or its key is revoked.
+`aud` (`--iss`, `--aud`), `sub` (required), the token type
+(`--token-type`) and whether the token or its key is revoked.
 
 [< Previous: Standards (RFC)](./standards.md) |
 [Contents](./index.md) |

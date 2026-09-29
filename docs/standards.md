@@ -1,16 +1,19 @@
 # Standards (RFC)
 
 How the library follows the standards of JWT. The behavior was checked in
-0.9.0 with forged tokens, the tests are in `tests/test_standards.py`.
+0.9.0 and 1.0.0 with forged tokens, the tests are in `tests/test_standards.py`.
 
 ## Algorithms
 
-- **RFC 7518 (JWA), RFC 9864:** Tokens are signed only by ES256 (ECDSA P-256
-  SHA-256), a fully specified algorithm. `verify` accepts no other algorithm.
+- **RFC 7518 (JWA), RFC 8037, RFC 9864:** Tokens are signed by ES256 (ECDSA
+  P-256 SHA-256, the default) or Ed25519, fully specified algorithms (not the
+  deprecated `EdDSA`). The algorithm belongs to the key: `verify` uses only
+  the algorithm of the key selected by `kid`, a token with another `alg` is
+  rejected.
 - **RFC 8725 3.1, 3.2:** `alg: none`, HS256 with the public key as a secret (key
   confusion) and other algorithms in the header are rejected.
-- **RFC 7516, RFC 8725 3.1:** `WrapJWE.decrypt` accepts only A128KW + A128GCM
-  (since 0.9.0), the algorithms of `WrapJWE.encrypt`.
+- **RFC 7516, RFC 8725 3.1:** `WrapJWE.decrypt` accepts only A128KW + A128GCM,
+  the algorithms of `WrapJWE.encrypt`.
 - **RFC 8725 3.6, 8725bis:** `WrapJWE` does not compress data. Other compressed
   data are rejected, `joserfc` limits the decompressed size to 256 kB.
 
@@ -20,7 +23,10 @@ How the library follows the standards of JWT. The behavior was checked in
   RFC 7797) are rejected.
 - **RFC 8725 3.10, 8725bis:** The key is selected only by `kid` from your
   storage. `jwk`, `jku`, `x5u` and `x5c` in the header are ignored. `kid` is
-  validated strictly: `uuid4().hex`, or a RFC 7638 thumbprint (keys of 1.0.0).
+  validated strictly: a RFC 7638 thumbprint, or `uuid4().hex` (keys of 0.x),
+  in the token header, in all methods which take a Key ID (`revoke`,
+  `load_verification_key`, `WrapJWE.decrypt(kid=...)`, `genjw revoke`) and
+  again in the storages (file names, Vault paths, Redis keys).
 - **RFC 8725 2.8, 3.11, 3.12:** Explicit typing: `WrapJWT(token_type="at+jwt")`
   writes the `typ` header and `verify` rejects other types (`TokenTypeError`),
   see [Token types](./tokens.md#token-types). Without `token_type` the header is
@@ -41,8 +47,8 @@ How the library follows the standards of JWT. The behavior was checked in
   exactly (case-sensitive).
 - **RFC 7519 4.1.3, RFC 8725 3.9:** `aud` is required by `verify`, a list must
   contain an allowed value.
-- **RFC 7519 4.1.2:** `sub` must be a string. It is optional in 0.x and will be
-  required by `create` and `verify` in 1.0.0.
+- **RFC 7519 4.1.2:** `sub` is required by `create` and `verify` and must be
+  a non-empty string (stricter than the RFC).
 - **RFC 7519 4.1.7:** `jti` is always added (`uuid4().hex`), revoked tokens are
   identified by it.
 - **RFC 7519 7.2:** The payload must be a JSON object, otherwise
@@ -53,10 +59,11 @@ How the library follows the standards of JWT. The behavior was checked in
 ## Keys
 
 - **RFC 7517:** Keys are stored as JWK, `WrapJWK.jwks()` publishes a JWK Set
-  with `kid`, `kty`, `crv`, `x`, `y`, `use: sig` and `alg: ES256`, never private
-  keys.
-- **RFC 7638:** `kid` is `uuid4().hex` in 0.x. Keys created by 1.0.0 will use
-  the JWK thumbprint, 0.9.0 already accepts both.
+  with `kid`, `kty`, `crv`, `x` (and `y` of EC keys), `use: sig` and the
+  `alg` of the key (`ES256` or `Ed25519`), never private keys.
+- **RFC 7638:** the `kid` of a key is its JWK thumbprint (base64url SHA-256).
+  Keys of the 0.x versions with a `uuid4().hex` Key ID stay valid.
+- **RFC 8037:** Ed25519 keys are OKP keys (`kty: OKP`, `crv: Ed25519`).
 
 ## Access tokens (RFC 9068)
 
@@ -79,19 +86,21 @@ token = myjwt.create({"sub": "123", "client_id": "web-app"})
 
 `verify` with `token_type="at+jwt"` checks the token as the profile requires
 (`typ`, `iss`, `aud`, `exp`, the signature). The profile requires servers to
-support also RS256, the library supports only ES256: a service built only
-on the library cannot accept RS256 tokens of other issuers. `sub` will be
-required in 1.0.0.
+support also RS256. The library supports only ES256 and Ed25519, RS256 will
+never be supported: a service built only on the library cannot accept RS256
+tokens of other issuers.
 
 ## Things to know
 
-- **ECDSA signatures are malleable.** A signature `(r, s)` is also valid as
+- **ECDSA signatures are malleable** (ES256 keys, Ed25519 signatures are
+  not). A signature `(r, s)` is also valid as
   `(r, n - s)`, so the same token can exist in two different strings. JOSE
   does not forbid it. Never identify a token by its string or its hash, use
   `jti` (as the revocation of tokens does).
-- **Stricter than the RFC:** `verify` requires `exp`, `iss` and `aud`.
-- **Not supported:** other algorithms (RSA, EdDSA), JWS JSON serialization,
-  nested tokens, JWKS of other issuers.
+- **Stricter than the RFC:** `verify` requires `exp`, `iss`, `aud` and `sub`.
+- **Not supported:** other algorithms (RS256 and other RSA algorithms will
+  never be supported, the deprecated `EdDSA` identifier), JWS JSON
+  serialization, nested tokens, JWKS of other issuers.
 
 [< Previous: Security notes for developers](./security.md) |
 [Contents](./index.md) |

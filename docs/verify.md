@@ -6,8 +6,9 @@ Verify every token by `verify` before you accept it, see also the
 ## Verify token
 
 `verify` checks everything in one call: the signature (the key is selected
-by `kid` in the token header), `exp` (required), `nbf`, `iat`, `iss`, `aud`
-and `max_age`. It returns the token or raises an exception with the reason.
+by `kid` in the token header), `exp` (required), `nbf`, `iat`, `iss`, `aud`,
+`sub` (required), `max_age` and the `typ` header when `token_type` is set.
+It returns the token or raises an exception with the reason.
 The public keys are cached by the storage object, see
 [Cache of verification keys](./storage.md#cache-of-verification-keys).
 Services which only verify tokens can use the JWKS instead of the storage,
@@ -56,8 +57,8 @@ is not set.
 `decode` verifies only the signature and does not check any claim. Use it
 only to show a token (like `genjw show`), never to accept a token.
 
-`validate` is deprecated since 0.4.0 (`DeprecationWarning`) and will be
-removed in 1.0.0, use `verify`.
+`verify` requires the `sub` claim, a token without it is invalid
+(`TokenClaimError`).
 
 ## Async applications
 
@@ -130,8 +131,9 @@ myjwt.revoke_jti(jti, expires_at=exp)
 - All processes which verify tokens must have `revocation=True` and the same
   storage, a process without it accepts a revoked token. Services with
   `StorageJWKS` cannot check revoked tokens.
-- Tokens created by versions older than 0.4.0 have no `jti` and cannot be
-  revoked. `require_jti=True` of `WrapJWT` makes them invalid.
+- `create` always adds `jti`. A token without `jti` (e.g. signed by another
+  tool with the same keys) cannot be revoked, `require_jti=True` of
+  `WrapJWT` makes it invalid.
 - The storage of the keys saves also the revoked tokens, no other storage
   is needed. Supported by `StorageRedis`, `StorageVault` and `StorageFile`.
   With `StorageVault` each `verify` sends one more request to Vault, for a
@@ -155,11 +157,8 @@ All exceptions of this library are subclasses of `WrapperErrors`:
   `__cause__`
 - `KeysNotFoundError` - subclass of `KeysLoadError`, the keys are not in
   the storage (`verify` raises `TokenKidUnknownError` instead)
-- `KeysNotLoadedError` - `WrapJWK` getters called before `load_keys` or
-  `generate_keys`
 - `GenerateKeysError` - key generation failed
-- `CreateTokenError` - missing or invalid claims or `exp` (before 0.8.0
-  `CreateTokenException`, the old name is deprecated)
+- `CreateTokenError` - missing or invalid claims or `exp`
 - `ConfigurationError` - invalid parameters of `WrapJWT`, `verify` without
   `issuer` and `audience`, or `revocation=True` with a storage which does
   not support it

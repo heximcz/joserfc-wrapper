@@ -1,57 +1,93 @@
 # Upgrading
 
+## Versioning
+
+Since 1.0.0 the library follows [semantic versioning](https://semver.org/):
+
+- Incompatible changes come only in a new major version (2.0.0), also the
+  end of the support of a Python version.
+- What will be removed gets a `DeprecationWarning` at least one minor
+  version before.
+- The public API: everything in `__all__` of `joserfc_wrapper`, the `genjw`
+  command, `joserfc_wrapper.testing`, the contract of `AbstractKeyStorage`
+  and the format of the key records in the storages.
+
+The versions before 1.0.0 were the development branch of the project, 1.0.0
+is not backward compatible with them.
+
+## Upgrading from 0.x to 1.0.0
+
+Upgrade to the last 0.9.x first and fix its `DeprecationWarning` messages,
+0.9.x supports the old and the new behavior (`genjw upgrade-check` of 0.9.1
+checks the storage and your tokens). Then:
+
+1. **Python 3.11** or newer.
+2. **Vault:** install `joserfc-wrapper[vault]`, the Vault client `hvac` is
+   only in this extra. KV v1 (`kv_version`, `VAULT_KV_VERSION`) is removed
+   and will not return, copy the records `<kid>` and `last-key-id` to a KV
+   v2 mount.
+3. **`sub` is required** by `create`, by `genjw token --sub` and by
+   `verify`, a token without `sub` is invalid. Create tokens with `sub` on
+   0.9.x and wait until the older tokens expire before the upgrade.
+4. **The services which create tokens** must be upgraded together. New keys
+   of 1.0.0 have no counter of tokens and `create` of 0.9.x fails with them
+   (`KeysLoadError`). After the first rotation by 1.0.0 you cannot go back to
+   0.9.x. Services which only verify tokens can stay on 0.9.x with ES256
+   keys.
+5. **Ed25519:** enable it (`key_algorithm`, `--algorithm`) only when all
+   services use 1.0.0, 0.9.x does not verify Ed25519 keys.
+6. **Custom storages:** implement `save_last_kid` (instead of
+   `_save_last_id`) and atomic `replace_last_keys` and `update_metadata`,
+   they are abstract now. `increase_counter` is not used anymore. Check the
+   storage by `joserfc_wrapper.testing.check_storage`.
+
+Removed and renamed (0.x → 1.0.0):
+
+- `WrapJWT.validate` → `verify`.
+- `create(claims, payload=...)`, `--payload` → `max_key_age`,
+  `--max-key-age`.
+- `uid` required, `--uid` → `sub` required, `--sub`. `uid` is a custom claim
+  now.
+- `WrapJWT.get_kid()` → `token.header["kid"]`.
+- `CreateTokenException` → `CreateTokenError`.
+- The module names `joserfc_wrapper.WrapJWT`, `Exceptions`, ... →
+  `joserfc_wrapper.wrap_jwt`, `exceptions`, ... or better
+  `from joserfc_wrapper import ...`.
+- `WrapJWK.load_keys`, `generate_keys`, `save_keys`, `reserve_key` →
+  `rotate`, `reserve_signing_key`, `load_verification_key`,
+  `load_secret_key`.
+- `WrapJWK.get_kid`, `get_private_key`, ... (the loaded keys) →
+  `storage.get_last_kid()`, `list_keys()`, `jwks()`.
+- `StorageVault(kv_version=1)` → KV v2 only.
+- `AbstractKeyStorage._save_last_id` → `save_last_kid`,
+  `increase_counter` → removed.
+- `genjw upgrade-check` → removed.
+- `KeysNotLoadedError` → removed (no loaded keys in `WrapJWK`).
+
+New in 1.0.0:
+
+- The Key ID of new keys is the RFC 7638 thumbprint of the key, keys with
+  a `uuid4().hex` Key ID stay valid.
+- Ed25519 keys: `WrapJWK.rotate(algorithm="Ed25519")`,
+  `WrapJWT(key_algorithm="Ed25519")`, `genjw keys --algorithm=Ed25519`.
+  ES256 stays the default. A token is always verified by the algorithm of
+  its key.
+- `WrapJWK` keeps no state, one object can be shared by all threads.
+- `create` does not write to the storage (no counter of tokens).
+- RS256 is not supported and will never be supported.
+
 ## Preparing for 1.0.0
 
-1.0.0 removes everything deprecated in the 0.x series. The changes are
-decided, details may change until the release. Prepare on 0.9.x, it
-supports the old and the new behavior.
+Moved to [Upgrading from 0.x to 1.0.0](#upgrading-from-0x-to-100).
 
-What changes in 1.0.0:
+## Upgrading between 0.x versions
 
-- Python 3.11 or newer.
-- The Vault client `hvac` is installed only with the `vault` extra:
-  `pip install "joserfc-wrapper[vault]"`.
-- Vault KV v1 (`kv_version=1`, `VAULT_KV_VERSION=1`) is removed and will
-  not return.
-- `sub` is required by `create`, by `genjw token` (`--sub`) and by `verify`:
-  a token without `sub` is invalid.
-- Removed: `validate` (use `verify`), `payload` and `--payload` (use
-  `max_key_age`), the counter of tokens (`create` does not write to the
-  storage anymore), `uid` and `--uid` (use `sub`), the old module names
-  (`joserfc_wrapper.WrapJWT`, ...), `CreateTokenException` (use
-  `CreateTokenError`), `WrapJWT.get_kid()` (use `token.header["kid"]`),
-  `_save_last_id` of custom storages (implement `save_last_kid`).
-- New keys get a RFC 7638 thumbprint as `kid`, 0.9.x already accepts it.
-- New keys can use Ed25519, ES256 stays the default. RS256 is not and will
-  never be supported.
-
-How to prepare:
-
-1. Upgrade all services which create or verify tokens to 0.9.x, before any
-   of them uses 1.0.0 (keys of 1.0.0 have a new `kid` format).
-2. Run the tests of your application with deprecation warnings as errors,
-   they show everything removed in 1.0.0:
-   `python -W error::DeprecationWarning -m pytest`.
-3. Create tokens with `sub` and wait until the older tokens expire (the
-   longest lifetime of your tokens, `max_token_lifetime`).
-4. Vault: move the keys from KV v1 to KV v2 (see
-   [Vault policy](./storage.md#vault-policy)) and install
-   `joserfc-wrapper[vault]`.
-5. Custom storages: implement `save_last_kid(kid)`.
-6. Check the storage, the environment and a token of your application:
-
-   ```bash
-   genjw upgrade-check --token="<token>" --lifetime="days=1"
-   ```
-
-   It prints `BLOCKER` (stops working after the upgrade) and `WARNING`
-   findings and exits with code 1 when there is a blocker, see
-   [Upgrade check](./cli.md#upgrade-check).
+The following sections are the history of the development versions.
 
 ## Upgrading from 0.9.0
 
-- New command `genjw upgrade-check`, see
-  [Preparing for 1.0.0](#preparing-for-100). No other changes.
+- New command `genjw upgrade-check` (0.9.1), see
+  [Upgrading from 0.x to 1.0.0](#upgrading-from-0x-to-100).
 
 ## Upgrading from 0.8.x
 

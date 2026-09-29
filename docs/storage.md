@@ -11,21 +11,12 @@ storage with the signing keys.
 # file storage, the directory must exist
 storage = StorageFile(cert_dir="/etc/myapp/keys")
 
-# HashiCorp Vault storage (pip install joserfc-wrapper[vault]), KV v2
-# secrets engine (default)
+# HashiCorp Vault storage (pip install joserfc-wrapper[vault]), the KV v2
+# secrets engine
 storage = StorageVault(
     url="<vault url>",
     token="<token>",
     mount="<secure mount>",
-)
-
-# KV v1 secrets engine (keys saved by versions older than 0.3.0),
-# not safe for concurrent processes, deprecated: removed in 1.0.0
-storage = StorageVault(
-    url="<vault url>",
-    token="<token>",
-    mount="<secure mount>",
-    kv_version=1,
 )
 
 # Redis storage (pip install joserfc-wrapper[redis])
@@ -45,9 +36,9 @@ atomic and locked by the `.lock` file in the same directory. Revoked tokens
 are saved to the `revoked/` subdirectory, `StorageVault` saves them to
 `<mount>/revoked/`.
 
-`StorageVault` needs the Vault client `hvac`. Install it by
-`pip install "joserfc-wrapper[vault]"`: until 0.9.x `hvac` is installed
-always, in 1.0.0 only with the `vault` extra.
+`StorageVault` needs the Vault client `hvac`, install it by
+`pip install "joserfc-wrapper[vault]"`. It supports only the KV v2 secrets
+engine, KV v1 is not supported.
 
 A KV v2 mount for `StorageVault` can be created by:
 
@@ -76,7 +67,7 @@ What each feature needs (checked by the Vault audit log):
 An application which creates and verifies tokens and manages the keys:
 
 ```text
-# keys, counter of tokens, metadata and the last Key ID
+# keys, metadata and the last Key ID
 path "jwt/data/*" {
   capabilities = ["create", "read", "update"]
 }
@@ -106,13 +97,8 @@ create tokens. Services which only verify tokens should use the JWKS and no
 access to Vault, see [Verifying services (JWKS)](./jwks.md).
 
 `auth/token/renew-self` is needed only when the application renews its own
-periodic token. KV v1 (`kv_version=1`) has no `data/` and `metadata/`
-paths, use `jwt/*` with the capabilities of both paths.
-
-KV v1 is deprecated since 0.5.0 (`DeprecationWarning`) and its support will
-be removed in 1.0.0. Move the keys to a KV v2 mount: copy the records
-`<kid>` and `last-key-id` to the new mount, or create new keys there
-(`rotate`) and keep the KV v1 mount until the old tokens expire.
+periodic token. `create` writes to Vault only when it rotates the keys
+(`max_key_age`, revoked keys).
 
 ## Redis
 
@@ -170,7 +156,7 @@ An ACL user for the application (replace `jwt:` by your prefix,
 
 ```bash
 redis-cli ACL SETUSER app on ">password" "~jwt:*"
-redis-cli ACL SETUSER app +get +set +exists +del +scan +multi +exec
+redis-cli ACL SETUSER app +get +set +exists +del +scan
 redis-cli ACL SETUSER app +evalsha "+script|load"
 ```
 
@@ -180,18 +166,18 @@ needed only by `list_keys` and `prune`.
 ## Concurrent processes
 
 More processes can sign tokens with the same storage. The keys are rotated
-only once (by age, revocation or the deprecated `payload`) and the counter of
-tokens is increased atomically:
+only once (by age or revocation) and the metadata are changed atomically:
 
 - `StorageFile` locks writes with `fcntl.flock` on the `.lock` file in
   `cert_dir` (not on Windows, not reliable on NFS).
-- `StorageVault` with KV v2 uses check-and-set. KV v1 is not atomic.
+- `StorageVault` uses check-and-set of KV v2.
 - `StorageRedis` uses Lua scripts, Redis runs each script atomically.
-- A custom storage is atomic only when it overrides `increase_counter`,
-  `replace_last_keys` and `update_metadata`, see below.
+- A custom storage must implement `replace_last_keys` and
+  `update_metadata` atomically, see below.
 
-One storage object, `WrapJWK` and `WrapJWT` can be shared by all threads of
-the application (since 0.8.0), see [Security notes](./security.md).
+`create` does not write to the storage, only a rotation does. One storage
+object, `WrapJWK`, `WrapJWT` and `WrapJWE` can be shared by all threads of
+the application, see [Security notes](./security.md).
 
 ## Cache of verification keys
 
@@ -209,13 +195,15 @@ storage = StorageFile(cert_dir="/etc/myapp/keys", key_cache_ttl=0)
 
 - The cache belongs to the storage object, share one object in the
   application.
-- A revoked key is rejected at once in the process which revoked it. Other
-  processes reject it after `key_cache_ttl` at the latest.
+- A revoked key is rejected at once by the storage object which revoked it.
+  Other storage objects (other processes) reject it after `key_cache_ttl`
+  at the latest.
 - New keys after a rotation are not delayed, an unknown `kid` is always
   read from the storage.
 - The revocation of single tokens (`revocation=True`) is not cached, it is
   checked in the storage for each token.
-- `create` is not cached, it reads and writes the storage.
+- `create` does not use the cache, it reads the last keys from the storage
+  and writes to it only when it rotates the keys.
 - `storage.clear_key_cache()` forgets the cached keys, e.g. after changing
   the keys by other tools.
 
@@ -226,38 +214,43 @@ A custom storage, for example a database, must be a subclass of
 and implement:
 
 - `get_last_kid()` - the last Key ID
-- `load_keys(kid="")` - returns `(kid, {"data": keys})`, the last keys for
+- `load_keys(kid="")` - returns `(kid, {"data": record})`, the last keys for
   an empty `kid`
-- `save_keys(kid, keys)` - saves the keys and sets them as the last keys
-- `save_last_kid(kid)` - sets the last Key ID (since 0.8.0, storages for
-  older versions implement `_save_last_id(kid)`, it still works and is
-  deprecated)
+- `save_keys(kid, record)` - saves the keys and sets them as the last keys
+- `save_last_kid(kid)` - sets the last Key ID
+- `replace_last_keys(last_kid, kid, record)` - atomically saves new keys as
+  the last keys only when the last Key ID is still `last_kid` (a rotation by
+  concurrent processes happens only once)
+- `update_metadata(kid, fields)` - atomically sets fields of a record and
+  keeps all other fields
 
-The keys have this format:
+Use a lock, check-and-set or a transaction for the atomic methods. Set
+`not_found_errors` to the exceptions of unknown keys, `verify` then raises
+`TokenKidUnknownError` (HTTP 401) instead of `KeysLoadError` (HTTP 500).
+
+A key record:
 
 ```python
 {
     "keys": {"private": dict, "public": dict, "secret": dict},
-    "counter": int,
-    # metadata since 0.5.0, unix timestamps, keep all fields of the record
+    # unix timestamps, keep all fields of the record
     "created": int,
-    "retired": int,  # optional
-    "revoked": int,  # optional
+    "retired": int,  # optional, set by a rotation
+    "revoked": int,  # optional, set by revoke
 }
 ```
 
-For concurrent processes override also `increase_counter(kid, limit)`,
-`replace_last_keys(last_kid, kid, keys)` and `update_metadata(kid, fields)`
-with atomic implementations. The default implementations use the methods
-above and are not atomic.
+Records of the 0.x versions may have a `counter` and no `created`, they are
+loaded as well. The algorithm of a key (ES256, Ed25519) is given by its
+public key.
 
-For `list_keys` and `prune` implement also `list_kids()` and
+For `list_keys`, `prune` and `jwks` implement also `list_kids()` and
 `delete_keys(kid)`. Without them the storage works, only listing and
 deleting keys raise `KeysLoadError` or `KeysSaveError`.
 
-The cache of verification keys and `jwks()` work for custom storages without
-any change, they use `load_keys` and `list_kids`. Set `key_cache_ttl` as an
-attribute (`self.key_cache_ttl = 60`) to change the lifetime.
+The cache of verification keys works for custom storages without any
+change, it uses `load_keys`. Set `key_cache_ttl` as an attribute
+(`self.key_cache_ttl = 60`) to change the lifetime.
 
 For token revocation implement `revoke_jti(jti, expires_at)`,
 `is_jti_revoked(jti)` and `prune_revoked(now)`. Without them
@@ -267,8 +260,9 @@ For token revocation implement `revoke_jti(jti, expires_at)`,
 
 `joserfc_wrapper.testing` checks that a storage keeps the contract of
 `AbstractKeyStorage`: saving and loading keys, verification keys and their
-cache, the counter, metadata, rotation, concurrent writes, and listing,
-deleting, JWKS and token revocation when the storage implements them. The
+cache, metadata, rotation, atomic writes of concurrent threads, tokens of
+ES256 and Ed25519 keys, and listing, deleting, JWKS and token revocation
+when the storage implements them. The
 checks are plain functions with `assert`, they work with any test framework:
 
 ```python
@@ -278,8 +272,6 @@ from joserfc_wrapper.testing import check_storage
 def test_my_storage():
     # a test storage, the checks create keys and change the last Key ID
     check_storage(MyStorage(...))
-    # a storage without atomic methods
-    check_storage(MySimpleStorage(...), atomic=False)
 ```
 
 `check_read_only_storage(storage, kid)` checks a storage which only verifies
