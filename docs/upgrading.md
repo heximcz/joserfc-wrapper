@@ -1,5 +1,35 @@
 # Upgrading
 
+## Upgrading from 0.7.x
+
+- `uid` is not required by `create` anymore. Use the standard claim `sub`
+  (a string, e.g. `{"sub": "123"}`). `create` without `sub` raises
+  `DeprecationWarning`, `sub` will be required by `create` and `verify` in
+  1.0.0. Before upgrading to 1.0.0, create tokens with `sub` and wait until
+  the older tokens expire (`max_token_lifetime`). `uid` still must be an int
+  when present.
+- CLI: `genjw token --sub=<subject>`, `--uid` is optional and deprecated.
+- The modules have snake_case names: `joserfc_wrapper.wrap_jwt`,
+  `wrap_jwk`, `wrap_jwe`, `storage_file`, `storage_vault`, `storage_redis`,
+  `storage_jwks`, `abstract_key_storage`, `exceptions`, `token_header` and
+  `cli.gen_jwt`. The old names (`joserfc_wrapper.WrapJWT`, ...) still work
+  at runtime with `DeprecationWarning` and will be removed in 1.0.0, type
+  checkers do not know them. Import from `joserfc_wrapper`, it does not
+  change.
+- `CreateTokenException` is renamed to `CreateTokenError`, the old name
+  works with `DeprecationWarning` (the same class) until 1.0.0.
+- Safe for threads: one `WrapJWK`, `WrapJWT` and `WrapJWE` can be shared by
+  all threads. `create`, `decode`, `verify`, `encrypt` and `decrypt` do not
+  change the loaded keys of `WrapJWK` anymore: after `create` or
+  `WrapJWE.encrypt`, `WrapJWK.get_kid()` does not return the Key ID of the
+  new token. Read it from the token (`token.header["kid"]`) or the storage
+  (`storage.get_last_kid()`).
+- `WrapJWT.get_kid()` is deprecated (removed in 1.0.0), use
+  `token.header["kid"]` of the token returned by `verify` or `decode`.
+- Custom storages: implement `save_last_kid(kid)` instead of
+  `_save_last_id(kid)`. Storages with `_save_last_id` still work, in 1.0.0
+  `save_last_kid` will be required.
+
 ## Upgrading from 0.6.x
 
 - **Cache of verification keys**, enabled by default: the storage object

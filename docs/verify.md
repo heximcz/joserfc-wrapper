@@ -31,7 +31,7 @@ except KeysLoadError:
 Other claims which must be equal in the token:
 
 ```python
-admin_token = myjwt.create(claims={"uid": 123, "role": "admin"})
+admin_token = myjwt.create(claims={"sub": "123", "role": "admin"})
 verified = myjwt.verify(admin_token, claims={"role": "admin"})
 ```
 
@@ -117,7 +117,8 @@ All exceptions of this library are subclasses of `WrapperErrors`:
 - `KeysNotLoadedError` - `WrapJWK` getters called before `load_keys` or
   `generate_keys`
 - `GenerateKeysError` - key generation failed
-- `CreateTokenException` - missing or invalid claims or `exp`
+- `CreateTokenError` - missing or invalid claims or `exp` (before 0.8.0
+  `CreateTokenException`, the old name is deprecated)
 - `ConfigurationError` - invalid parameters of `WrapJWT`, `verify` without
   `issuer` and `audience`, or `revocation=True` with a storage which does
   not support it

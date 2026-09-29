@@ -38,8 +38,9 @@ jwt = WrapJWT(
     jwk, issuer="https://example.com", audience="api", default_exp=3600
 )
 
-# create a token ('iss', 'aud', 'exp' and 'jti' are added automatically)
-token = jwt.create(claims={"uid": 123})
+# create a token for a user ('iss', 'aud', 'exp' and 'jti' are added
+# automatically)
+token = jwt.create(claims={"sub": "123"})
 
 # verify the signature, exp, iss and aud, raises InvalidTokenError
 print(jwt.verify(token).claims)
@@ -47,7 +48,8 @@ print(jwt.verify(token).claims)
 
 The same with HashiCorp Vault or Redis: use `StorageVault` or
 `StorageRedis` instead of `StorageFile`, see [Storages](./storage.md).
-Create the storage once and share it in the application. Services which
+Create the storage, `WrapJWK` and `WrapJWT` once and share them in the
+application, they are safe for threads. Services which
 only verify tokens can use `StorageJWKS`, see
 [Verifying services (JWKS)](./jwks.md).
 

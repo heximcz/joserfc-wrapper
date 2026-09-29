@@ -52,7 +52,7 @@ Not exported from `joserfc_wrapper`, import it from
 ## Exceptions
 
 ```{eval-rst}
-.. automodule:: joserfc_wrapper.Exceptions
+.. automodule:: joserfc_wrapper.exceptions
    :members:
    :member-order: bysource
 ```

@@ -104,8 +104,10 @@ from joserfc_wrapper import StorageJWKS, WrapJWK, WrapJWT
 # create it once and share it in the application
 storage = StorageJWKS("https://auth.example.com/.well-known/jwks.json")
 
-# for each request
+# once, shared by all threads
 myjwt = WrapJWT(WrapJWK(storage), issuer="https://example.com", audience="api")
+
+# for each request
 verified = myjwt.verify(token)
 ```
 

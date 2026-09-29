@@ -125,10 +125,12 @@ failure, never the whole token.
 - A custom storage is safe for concurrent processes only when it overrides
   `increase_counter`, `replace_last_keys` and `update_metadata` with atomic
   implementations.
-- `WrapJWK` and `WrapJWT` keep state (the loaded key, the last `kid`).
-  Create new instances for each thread or request, do not share them.
-- Share one storage object in the application, its cache of verification
-  keys is safe for threads.
+- Since 0.8.0 one storage object, `WrapJWK`, `WrapJWT` and `WrapJWE` can be
+  shared by all threads of the application: `create`, `verify`, `decode`,
+  `encrypt` and `decrypt` keep no state. The key management methods of
+  `WrapJWK` (`rotate`, `revoke`, `load_keys`, `generate_keys` and the
+  getters of the loaded keys) keep the loaded keys, use a separate WrapJWK
+  for them (e.g. in a cron job).
 
 ## 11. Vault KV v2 settings
 

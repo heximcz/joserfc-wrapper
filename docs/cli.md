@@ -51,10 +51,10 @@ Create JWT token
 
 ```bash
 # Minimal (--exp is required)
-genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
+genjw token --iss="https://example.tld" --aud="auditor" --sub=123 \
     --exp="hours=1"
 # Full
-genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
+genjw token --iss="https://example.tld" --aud="auditor" --sub=123 \
     --exp="minutes=10" --custom="{var1:value1,var2:value2}" \
     --max-key-age="days=30"
 # output
@@ -77,7 +77,7 @@ genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..."
 genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --header=True
 # output
 # Header: {'typ': 'JWT', 'alg': 'ES256', 'kid': '8cb0...'}
-# Claims: {'iss': 'https://example.tld', 'aud': 'auditor', 'uid': 123, ...}
+# Claims: {'iss': 'https://example.tld', 'aud': 'auditor', 'sub': '123', ...}
 ```
 
 ## File storage
@@ -101,7 +101,7 @@ genjw keys --storage=file
 Create JWT token
 
 ```bash
-genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
+genjw token --iss="https://example.tld" --aud="auditor" --sub=123 \
     --exp="hours=1" --storage=file
 ```
 
@@ -133,7 +133,7 @@ Use the `--storage=redis` switch with all commands:
 
 ```bash
 genjw keys --storage=redis
-genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
+genjw token --iss="https://example.tld" --aud="auditor" --sub=123 \
     --exp="hours=1" --storage=redis
 ```
 
@@ -142,6 +142,9 @@ genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
 - `--exp` (required) - the token expires after the given time, units:
   `seconds`, `minutes`, `hours`, `days`, `weeks`, for example
   `--exp="hours=2"`. A token without expiration is invalid.
+- `--sub` - the subject of the token (e.g. a user ID), a string. Recommended,
+  a token without it prints a warning, required in 1.0.0.
+- `--uid` - deprecated since 0.8.0, use `--sub`. An int claim `uid`.
 - `--custom` - other claims, they do not override the required claims.
 - `--max-key-age` - rotate the keys when they are older, for example
   `--max-key-age="days=30"`. The old keys stay in the storage for verifying
@@ -192,11 +195,12 @@ genjw revoke-token --token="eyJ0eXAiOiJKV1QiLCJhbGc..."
 # Token has been revoked.
 ```
 
-The token must have `jti` and `exp`, the record is kept until the token
-expires. `genjw check` rejects revoked tokens (`TokenRevokedError`) when the
-storage supports token revocation (all storages of the library). The
-application must verify tokens with `revocation=True`, see
-[Revoke tokens](./verify.md#revoke-tokens).
+The command works as `revoke-token` and `revoke_token` (as `genjw --help`
+shows it). The token must have `jti` and `exp`, the record is kept until
+the token expires. `genjw check` rejects revoked tokens
+(`TokenRevokedError`) when the storage supports token revocation (all
+storages with keys). The application must verify tokens with
+`revocation=True`, see [Revoke tokens](./verify.md#revoke-tokens).
 
 ## Errors
 

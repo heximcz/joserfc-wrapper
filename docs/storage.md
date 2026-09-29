@@ -175,8 +175,8 @@ tokens is increased atomically:
 - A custom storage is atomic only when it overrides `increase_counter`,
   `replace_last_keys` and `update_metadata`, see below.
 
-`WrapJWK` keeps the loaded keys, create a new `WrapJWK` and `WrapJWT` for each
-thread.
+One storage object, `WrapJWK` and `WrapJWT` can be shared by all threads of
+the application (since 0.8.0), see [Security notes](./security.md).
 
 ## Cache of verification keys
 
@@ -193,7 +193,7 @@ storage = StorageFile(cert_dir="/etc/myapp/keys", key_cache_ttl=0)
 ```
 
 - The cache belongs to the storage object, share one object in the
-  application. A new `WrapJWK` and `WrapJWT` for each request use it.
+  application.
 - A revoked key is rejected at once in the process which revoked it. Other
   processes reject it after `key_cache_ttl` at the latest.
 - New keys after a rotation are not delayed, an unknown `kid` is always
@@ -207,14 +207,16 @@ storage = StorageFile(cert_dir="/etc/myapp/keys", key_cache_ttl=0)
 ## Custom storage
 
 A custom storage, for example a database, must be a subclass of
-[`AbstractKeyStorage`](../joserfc_wrapper/AbstractKeyStorage.py)
+[`AbstractKeyStorage`](../joserfc_wrapper/abstract_key_storage.py)
 and implement:
 
 - `get_last_kid()` - the last Key ID
 - `load_keys(kid="")` - returns `(kid, {"data": keys})`, the last keys for
   an empty `kid`
 - `save_keys(kid, keys)` - saves the keys and sets them as the last keys
-- `_save_last_id(kid)` - sets the last Key ID
+- `save_last_kid(kid)` - sets the last Key ID (since 0.8.0, storages for
+  older versions implement `_save_last_id(kid)`, it still works and is
+  deprecated)
 
 The keys have this format:
 

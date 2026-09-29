@@ -17,7 +17,7 @@ try:
     # encrypt secret data (str or bytes) by the last keys,
     # the Key ID is saved in the header of the encrypted data
     claims_with_sec = {
-        "uid": 123,
+        "sub": "123",
         "sec": myjwe.encrypt(data="very secret text"),
         "sec_bytes": myjwe.encrypt(data=b"very secret bytes"),
     }

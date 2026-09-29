@@ -17,7 +17,8 @@ management of signature keys.
 - JWKS: other services and API gateways verify tokens with the public keys
   only, without access to the private keys. Cached verification keys.
 - Encryption of secret data (JWE), for example inside token claims.
-- Safe for concurrent processes sharing the same storage.
+- Safe for concurrent processes sharing the same storage and for threads
+  sharing one instance.
 - `genjw` command line tool for keys and tokens.
 
 ## Install
@@ -56,8 +57,9 @@ jwt = WrapJWT(
     jwk, issuer="https://example.com", audience="api", default_exp=3600
 )
 
-# create a token ('iss', 'aud', 'exp' and 'jti' are added automatically)
-token = jwt.create(claims={"uid": 123})
+# create a token for a user ('iss', 'aud', 'exp' and 'jti' are added
+# automatically)
+token = jwt.create(claims={"sub": "123"})
 
 # verify the signature, exp, iss and aud, raises InvalidTokenError
 print(jwt.verify(token).claims)
@@ -79,6 +81,7 @@ Full documentation: <https://joserfc-wrapper.readthedocs.io/>
 - [Library](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md)
 - [CLI](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/cli.md)
 - [Security notes for developers](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/security.md)
+- [Upgrading from 0.7.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-07x)
 - [Upgrading from 0.6.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-06x)
 - [Upgrading from 0.5.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-05x)
 - [Upgrading from 0.4.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-04x)

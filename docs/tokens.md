@@ -15,7 +15,7 @@ How tokens look like and how to create them.
 {
     "iss": "https://example.com",  # required, str (or issuer of WrapJWT)
     "aud": "api",  # required, str or list (or audience of WrapJWT)
-    "uid": 123,  # required, int
+    "sub": "123",  # subject (e.g. user ID), str, required in 1.0.0
     "jti": "5b0be60b1c91438e9f5c0a6c1b2d3e4f",  # unique token ID, automatic
     "iat": 1705418960,  # created automatically
     "exp": 1705422560,  # expiration, required by verify
@@ -23,6 +23,12 @@ How tokens look like and how to create them.
 ```
 
 Other claims are added to the token unchanged.
+
+`sub` (the subject of the token, e.g. a user ID) is the standard claim of
+RFC 7519 and a required claim of access tokens (RFC 9068). It is a string,
+`create` without it raises `DeprecationWarning` and `sub` will be required
+by `create` and `verify` in 1.0.0. `uid` is optional since 0.8.0 (an int when
+present), move to `sub`.
 
 ## Configure tokens
 
@@ -53,7 +59,7 @@ See [Signature keys](./keys.md) for `max_key_age` and `max_token_lifetime`,
 try:
     # a new token is always signed by the last keys in the storage,
     # 'iss' and 'aud' are added from WrapJWT, 'jti' is added automatically
-    token = myjwt.create(claims={"uid": 123})
+    token = myjwt.create(claims={"sub": "123"})
     print(f"Token: {token[:20]}..., Length: {len(token)} bytes")
 except Exception as e:
     print(f"{type(e).__name__}: {e}")
@@ -64,7 +70,9 @@ except Exception as e:
 - A token without `exp` is invalid for `verify`, create tokens with `exp`
   or set `default_exp`.
 - `iss` or `aud` in claims must match `issuer` and `audience` of WrapJWT,
-  otherwise `CreateTokenException`.
+  otherwise `CreateTokenError`.
+- `sub` must be a non-empty string, `uid` an int, otherwise
+  `CreateTokenError`.
 - `jti` (unique token ID) is added when it is not in the claims, a custom
   `jti` must be a non-empty string. `myjwt.get_jti(token)` returns it after
   verifying the signature, for example for logging.
