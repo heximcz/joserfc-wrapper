@@ -316,7 +316,8 @@ class WrapJWK:
         'max_token_lifetime' (+ leeway) seconds passed since it was retired,
         so all tokens signed by it have expired. Keys without the retirement
         time (created by versions older than 0.5.0) are never deleted. Run
-        it from the application or cron, never automatically.
+        it from the application or cron, never automatically. Records of
+        revoked tokens which expired are deleted too.
 
         :param max_token_lifetime: the longest lifetime of a token in
             seconds ('max_token_lifetime' of WrapJWT)
@@ -352,7 +353,41 @@ class WrapJWK:
                     partial(self.__storage.delete_keys, item["kid"]),
                 )
                 deleted.append(item["kid"])
+        # records of revoked tokens which expired (storages without TTL)
+        if self.supports_token_revocation():
+            self.__call_storage(
+                KeysSaveError,
+                partial(self.__storage.prune_revoked, now - leeway),
+            )
         return deleted
+
+    def supports_token_revocation(self) -> bool:
+        """Return True when the storage can revoke single tokens (jti)"""
+        return self.__storage.supports_token_revocation()
+
+    def revoke_jti(self, jti: str, expires_at: int) -> None:
+        """
+        Save a revoked token ID until the token expires
+
+        :param jti: token ID
+        :param expires_at: 'exp' of the token (unix timestamp)
+        :raises KeysSaveError: storage error or not supported
+        """
+        self.__call_storage(
+            KeysSaveError,
+            partial(self.__storage.revoke_jti, jti, expires_at),
+        )
+
+    def is_jti_revoked(self, jti: str) -> bool:
+        """
+        Return True when the token ID is revoked
+
+        :param jti: token ID
+        :raises KeysLoadError: storage error or not supported
+        """
+        return self.__call_storage(
+            KeysLoadError, partial(self.__storage.is_jti_revoked, jti)
+        )
 
     def __too_old(self, max_key_age: int | None) -> bool:
         """The loaded keys are older than max_key_age (or without age)"""

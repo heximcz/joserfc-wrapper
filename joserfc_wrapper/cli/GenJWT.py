@@ -12,6 +12,7 @@ from joserfc_wrapper import (
     InvalidTokenError,
     StorageVault,
     StorageFile,
+    StorageRedis,
     WrapJWK,
     WrapJWT,
 )
@@ -88,8 +89,18 @@ class GenerateJWT:
             if var is None:
                 fail("Missing var in environment for 'file' storage: CERT_DIR")
             self.__cert_dir = os.environ["CERT_DIR"]
+        elif storage == "redis":
+            if not os.environ.get("REDIS_URL"):
+                fail(
+                    "Missing var in environment for 'redis' storage: REDIS_URL"
+                )
+            self.__redis_url = os.environ["REDIS_URL"]
+            self.__redis_prefix = os.environ.get("REDIS_PREFIX", "jwt:")
         else:
-            fail("Allowed value is: --storage='vault' (default) or 'file'")
+            fail(
+                "Allowed value is: --storage='vault' (default), 'file' or "
+                "'redis'"
+            )
 
         # create storage object
         try:
@@ -106,6 +117,11 @@ class GenerateJWT:
                 if not os.path.exists(self.__cert_dir):
                     fail(f"Error: directory {self.__cert_dir} not exist.")
                 self.__storage = StorageFile(self.__cert_dir)
+                self.__wjwk = WrapJWK(self.__storage)
+            elif self.storage == "redis":
+                self.__storage = StorageRedis.from_url(
+                    self.__redis_url, prefix=self.__redis_prefix
+                )
                 self.__wjwk = WrapJWK(self.__storage)
         except Exception as e:  # pylint: disable=W0718
             fail_exception(e)
@@ -279,9 +295,24 @@ class GenerateJWT:
             return "No keys to delete."
         return "Deleted keys: " + ", ".join(deleted)
 
+    def revoke_token(self, token: str) -> str:
+        """
+        Revoke a single token, it becomes invalid (check) until it expires.
+        The storage must support it (file, vault, redis).
+
+        Required arguments:
+            --token=<jwt token>: str
+        """
+        try:
+            WrapJWT(self.__wjwk, revocation=True).revoke_token(token)
+        except Exception as e:  # pylint: disable=W0718
+            fail_exception(e)
+        return "Token has been revoked."
+
     def check(self, iss: str, aud: str, token: str) -> str:
         """
-        Check validity of a token
+        Check validity of a token (and revocation of the token when the
+        storage supports it)
 
         Required arguments:
             --iss=<issuer>: str
@@ -289,7 +320,12 @@ class GenerateJWT:
             --token=<jwt token>: str
         """
         try:
-            WrapJWT(self.__wjwk, issuer=iss, audience=aud).verify(token)
+            WrapJWT(
+                self.__wjwk,
+                issuer=iss,
+                audience=aud,
+                revocation=self.__wjwk.supports_token_revocation(),
+            ).verify(token)
         except InvalidTokenError as e:
             fail(f"Token is invalid. {type(e).__name__}: {str(e)}")
         except Exception as e:  # pylint: disable=W0718

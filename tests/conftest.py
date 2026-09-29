@@ -37,3 +37,8 @@ def vault_env() -> dict | None:
     if not all(os.environ.get(k) for k in keys):
         return None
     return {k: os.environ[k] for k in keys}
+
+
+def redis_url() -> str | None:
+    """Redis connection from environment (set in docker dev environment)"""
+    return os.environ.get("REDIS_URL") or None

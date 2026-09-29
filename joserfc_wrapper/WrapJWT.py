@@ -13,6 +13,7 @@ from joserfc_wrapper.Exceptions import (
     TokenExpiredError,
     TokenKidUnknownError,
     TokenKeyRevokedError,
+    TokenRevokedError,
     TokenNotYetValidError,
     TokenSignatureError,
 )
@@ -43,6 +44,8 @@ class WrapJWT:
         leeway: int = 0,
         max_key_age: int | None = None,
         max_token_lifetime: int | None = None,
+        revocation: bool = False,
+        require_jti: bool = False,
     ) -> None:
         """
         :param wrapjwk: keys of the storage
@@ -60,6 +63,11 @@ class WrapJWT:
             seconds since their creation (recommended instead of 'payload')
         :param max_token_lifetime: the longest allowed lifetime of a token
             in seconds, 'create' refuses a longer 'exp', required by 'prune'
+        :param revocation: 'verify' checks revoked tokens ('revoke_token'),
+            the storage must support it (StorageRedis, StorageVault,
+            StorageFile), one more storage read for each token
+        :param require_jti: with revocation, a token without 'jti' (created
+            by versions older than 0.4.0) is invalid
         :raises ObjectTypeError: wrapjwk is not WrapJWK
         :raises ConfigurationError: invalid parameters
         """
@@ -79,6 +87,16 @@ class WrapJWT:
         self.max_token_lifetime = self.__check_seconds(
             "max_token_lifetime", max_token_lifetime, 1
         )
+        if not isinstance(revocation, bool) or not isinstance(
+            require_jti, bool
+        ):
+            raise ConfigurationError("'revocation' and 'require_jti' are bool.")
+        if revocation and not wrapjwk.supports_token_revocation():
+            raise ConfigurationError(
+                "The storage does not support revoking tokens."
+            )
+        self.revocation = revocation
+        self.require_jti = require_jti
         if (
             self.max_token_lifetime is not None
             and self.default_exp is not None
@@ -116,7 +134,8 @@ class WrapJWT:
     def verify(self, token: str, claims: dict | None = None) -> Token:
         """
         Verify a token: signature, 'exp', 'nbf', 'iat', 'iss', 'aud',
-        'max_age' and optionally other claims
+        'max_age', a revoked key, optionally other claims and a revoked
+        token ('revocation')
 
         A token without 'exp' is invalid.
 
@@ -126,25 +145,20 @@ class WrapJWT:
         :raises ConfigurationError: 'issuer' or 'audience' is not set
         :raises InvalidTokenError: invalid token (HTTP 401), one of
             TokenDecodeError, TokenKidInvalidError, TokenKidUnknownError,
-            TokenSignatureError, TokenExpiredError, TokenNotYetValidError,
-            TokenClaimError
+            TokenSignatureError, TokenKeyRevokedError, TokenExpiredError,
+            TokenNotYetValidError, TokenClaimError, TokenRevokedError
         :raises KeysLoadError: storage error (HTTP 500)
         """
         if self.issuer is None or self.audience is None:
             raise ConfigurationError(
                 "Set 'issuer' and 'audience' of WrapJWT to verify tokens."
             )
-        try:
-            decoded = self.decode(token)
-        except KeysNotFoundError as e:
-            raise TokenKidUnknownError(str(e)) from e
-        except BadSignatureError as e:
-            raise TokenSignatureError from e
-        except JoseError as e:
-            raise InvalidTokenError(str(e)) from e
+        decoded = self.__decode_signed(token)
         if self.__jwk.is_revoked():
             raise TokenKeyRevokedError(f"Key ID '{self.__kid}'.")
         self.__check_token_claims(decoded, claims or {})
+        if self.revocation:
+            self.__check_revoked(decoded)
         return decoded
 
     def validate(self, token: Token, claims: dict) -> bool:
@@ -385,10 +399,91 @@ class WrapJWT:
                 f"({self.max_token_lifetime} seconds)."
             )
 
+    def revoke_token(self, token: str) -> None:
+        """
+        Revoke a single token, 'verify' with revocation then raises
+        TokenRevokedError
+
+        The signature is verified, the 'jti' is saved in the storage until
+        the token expires ('exp'). An expired token is not saved.
+
+        :param token: token to revoke
+        :raises ConfigurationError: revocation is not enabled
+        :raises InvalidTokenError: invalid token or signature (see
+            'verify'), TokenClaimError: the token has no 'jti' or 'exp'
+        :raises KeysLoadError: storage error
+        :raises KeysSaveError: storage error
+        """
+        self.__check_revocation_enabled()
+        claims = self.__decode_signed(token).claims
+        jti, exp = claims.get("jti"), claims.get("exp")
+        if not isinstance(jti, str) or not jti:
+            raise TokenClaimError("Token has no 'jti', it cannot be revoked.")
+        if not isinstance(exp, int) or isinstance(exp, bool):
+            raise TokenClaimError("Token has no 'exp', it cannot be revoked.")
+        if exp < int(time.time()) - self.leeway:
+            return
+        self.__jwk.revoke_jti(jti, exp + self.leeway)
+
+    def revoke_jti(self, jti: str, expires_at: int) -> None:
+        """
+        Revoke a token by its ID, when you do not have the token (e.g. from
+        a list of issued tokens of your application)
+
+        :param jti: token ID ('jti' claim)
+        :param expires_at: 'exp' of the token (unix timestamp)
+        :raises ConfigurationError: revocation is not enabled
+        :raises ValueError: invalid jti or expires_at
+        :raises KeysSaveError: storage error
+        """
+        self.__check_revocation_enabled()
+        if not isinstance(jti, str) or not jti:
+            raise ValueError("'jti' must be a non-empty string.")
+        if not isinstance(expires_at, int) or isinstance(expires_at, bool):
+            raise ValueError("'expires_at' must be a unix timestamp (int).")
+        self.__jwk.revoke_jti(jti, expires_at + self.leeway)
+
+    def __decode_signed(self, token: str) -> Token:
+        """
+        Decode a token and verify its signature
+
+        :raises InvalidTokenError: invalid token or signature, unknown kid
+        :raises KeysLoadError: storage error
+        """
+        try:
+            return self.decode(token)
+        except KeysNotFoundError as e:
+            raise TokenKidUnknownError(str(e)) from e
+        except BadSignatureError as e:
+            raise TokenSignatureError from e
+        except JoseError as e:
+            raise InvalidTokenError(str(e)) from e
+
+    def __check_revocation_enabled(self) -> None:
+        if not self.revocation:
+            raise ConfigurationError(
+                "Set 'revocation=True' of WrapJWT to revoke tokens."
+            )
+
+    def __check_revoked(self, token: Token) -> None:
+        """
+        :raises TokenRevokedError: the token is revoked
+        :raises TokenClaimError: no jti and require_jti
+        :raises KeysLoadError: storage error
+        """
+        jti = token.claims.get("jti")
+        if not isinstance(jti, str) or not jti:
+            if self.require_jti:
+                raise TokenClaimError("Token has no 'jti' (require_jti).")
+            return
+        if self.__jwk.is_jti_revoked(jti):
+            raise TokenRevokedError(f"jti '{jti}'.")
+
     def prune(self) -> list[str]:
         """
-        Delete keys which cannot sign any valid token anymore, see
-        'WrapJWK.prune' ('max_token_lifetime' and 'leeway' of WrapJWT)
+        Delete keys which cannot sign any valid token anymore and expired
+        records of revoked tokens, see 'WrapJWK.prune'
+        ('max_token_lifetime' and 'leeway' of WrapJWT)
 
         :returns: Key IDs of deleted keys
         :raises ConfigurationError: 'max_token_lifetime' is not set

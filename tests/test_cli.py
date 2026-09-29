@@ -4,9 +4,10 @@ import uuid
 from typing import Any
 from unittest.mock import patch
 
+import fakeredis
 import pytest
 
-from joserfc_wrapper import StorageFile, WrapJWK, WrapJWT
+from joserfc_wrapper import StorageFile, StorageRedis, WrapJWK, WrapJWT
 from joserfc_wrapper.cli.GenJWT import GenerateJWT
 
 
@@ -24,6 +25,7 @@ def cli(tmp_path, monkeypatch) -> GenerateJWT:
     [
         ("vault", ["VAULT_ADDR", "VAULT_TOKEN", "VAULT_MOUNT"]),
         ("file", ["CERT_DIR"]),
+        ("redis", ["REDIS_URL"]),
     ],
 )
 def test_missing_env(monkeypatch, capsys, storage, env):
@@ -360,3 +362,59 @@ def test_vault_kv_v1_is_deprecated(monkeypatch, capsys):
         GenerateJWT(storage="vault")
 
     assert "KV v1 (VAULT_KV_VERSION=1) is deprecated" in capsys.readouterr().err
+
+
+def test_revoke_token(cli, capsys):
+    token = cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5")
+    other = cli.token(iss="iss", aud="aud", uid=2, exp="minutes=5")
+
+    assert cli.revoke_token(token=token) == "Token has been revoked."
+    assert_fails(
+        capsys,
+        "TokenRevokedError",
+        cli.check,
+        iss="iss",
+        aud="aud",
+        token=token,
+    )
+    assert cli.check(iss="iss", aud="aud", token=other) == "Token is valid."
+
+
+def test_revoke_token_malformed(cli, capsys):
+    assert_fails(capsys, "TokenDecodeError", cli.revoke_token, token="x")
+
+
+@pytest.fixture
+def fake_redis(monkeypatch):
+    """StorageRedis.from_url returns a storage with fakeredis"""
+    client = fakeredis.FakeRedis()
+    calls = []
+
+    def from_url(url: str, prefix: str = "jwt:", **options):
+        calls.append((url, prefix))
+        return StorageRedis(client, prefix=prefix)
+
+    monkeypatch.setattr(StorageRedis, "from_url", staticmethod(from_url))
+    return calls
+
+
+def test_redis_storage(monkeypatch, fake_redis):
+    monkeypatch.setenv("REDIS_URL", "redis://host:6379/1")
+    monkeypatch.setenv("REDIS_PREFIX", "app:")
+
+    cli = GenerateJWT(storage="redis")
+    cli.keys()
+    token = cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5")
+    cli.revoke_token(token=token)
+
+    assert fake_redis == [("redis://host:6379/1", "app:")]
+    assert len(cli.list().splitlines()) == 1
+
+
+def test_redis_default_prefix(monkeypatch, fake_redis):
+    monkeypatch.setenv("REDIS_URL", "redis://host")
+    monkeypatch.delenv("REDIS_PREFIX", raising=False)
+
+    GenerateJWT(storage="redis")
+
+    assert fake_redis == [("redis://host", "jwt:")]

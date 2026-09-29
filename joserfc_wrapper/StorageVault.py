@@ -6,7 +6,7 @@ import hvac
 from hvac.exceptions import InvalidPath, InvalidRequest
 from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
 from joserfc_wrapper.Exceptions import KeysSaveError
-from joserfc_wrapper.TokenHeader import is_valid_kid
+from joserfc_wrapper.TokenHeader import is_valid_kid, jti_digest
 
 
 class StorageVault(AbstractKeyStorage):
@@ -132,6 +132,60 @@ class StorageVault(AbstractKeyStorage):
                 path="", mount_point=self.__mount
             )
         return sorted(k for k in result["data"]["keys"] if is_valid_kid(k))
+
+    def revoke_jti(self, jti: str, expires_at: int) -> None:
+        """Save a revoked token ID to revoked/<digest>"""
+        self.__write(f"revoked/{jti_digest(jti)}", {"exp": expires_at})
+
+    def is_jti_revoked(self, jti: str) -> bool:
+        """Return True when the token ID is revoked (one read)"""
+        try:
+            self.__read(f"revoked/{jti_digest(jti)}")
+        except InvalidPath:
+            return False
+        return True
+
+    def prune_revoked(self, now: int) -> int:
+        """
+        Delete records of revoked tokens which expired before 'now'
+
+        Needs the 'list' and 'delete' capabilities on
+        ``<mount>/metadata/*`` (KV v2).
+        """
+        try:
+            if self.kv_version == 1:
+                result = self.__client.secrets.kv.v1.list_secrets(
+                    path="revoked", mount_point=self.__mount
+                )
+            else:
+                result = self.__client.secrets.kv.v2.list_secrets(
+                    path="revoked", mount_point=self.__mount
+                )
+        except InvalidPath:
+            return 0
+        deleted = 0
+        for name in result["data"]["keys"]:
+            path = f"revoked/{name}"
+            try:
+                record, _ = self.__read(path)
+            except InvalidPath:
+                # deleted by another process in the meantime
+                continue
+            if record["exp"] < now:
+                self.__delete(path)
+                deleted += 1
+        return deleted
+
+    def __delete(self, path: str) -> None:
+        """Delete a secret (all versions)"""
+        if self.kv_version == 1:
+            self.__client.secrets.kv.v1.delete_secret(
+                path=path, mount_point=self.__mount
+            )
+        else:
+            self.__client.secrets.kv.v2.delete_metadata_and_all_versions(
+                path=path, mount_point=self.__mount
+            )
 
     def delete_keys(self, kid: str) -> None:
         """Delete keys (all versions) from the storage"""

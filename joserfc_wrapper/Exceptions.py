@@ -74,6 +74,10 @@ class TokenKidUnknownError(InvalidTokenError):
     error = "Unknown KID in token."
 
 
+class TokenRevokedError(InvalidTokenError):
+    error = "Token is revoked."
+
+
 class TokenKeyRevokedError(InvalidTokenError):
     error = "The key of the token is revoked."
 

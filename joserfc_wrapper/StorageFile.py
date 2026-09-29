@@ -6,7 +6,7 @@ import tempfile
 from contextlib import contextmanager
 from typing import Iterator
 from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
-from joserfc_wrapper.TokenHeader import is_valid_kid
+from joserfc_wrapper.TokenHeader import is_valid_kid, jti_digest
 
 try:
     import fcntl
@@ -86,6 +86,41 @@ class StorageFile(AbstractKeyStorage):
             for name in os.listdir(self.__cert_dir)
             if name.endswith(".json") and is_valid_kid(name[: -len(".json")])
         )
+
+    def revoke_jti(self, jti: str, expires_at: int) -> None:
+        """Save a revoked token ID to revoked/<digest>.json"""
+        with self.__lock():
+            os.makedirs(self.__revoked_dir(), mode=0o700, exist_ok=True)
+            self.__write_json(
+                os.path.join(self.__revoked_dir(), f"{jti_digest(jti)}.json"),
+                {"exp": expires_at},
+            )
+
+    def is_jti_revoked(self, jti: str) -> bool:
+        """Return True when the token ID is revoked"""
+        return os.path.exists(
+            os.path.join(self.__revoked_dir(), f"{jti_digest(jti)}.json")
+        )
+
+    def prune_revoked(self, now: int) -> int:
+        """Delete records of revoked tokens which expired before 'now'"""
+        if not os.path.isdir(self.__revoked_dir()):
+            return 0
+        deleted = 0
+        with self.__lock():
+            for name in os.listdir(self.__revoked_dir()):
+                path = os.path.join(self.__revoked_dir(), name)
+                if not name.endswith(".json"):
+                    continue
+                with open(path, "r", encoding="utf-8") as f:
+                    expires_at = json.load(f)["exp"]
+                if expires_at < now:
+                    os.remove(path)
+                    deleted += 1
+        return deleted
+
+    def __revoked_dir(self) -> str:
+        return os.path.join(self.__cert_dir, "revoked")
 
     def delete_keys(self, kid: str) -> None:
         """Delete keys from the storage"""

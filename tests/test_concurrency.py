@@ -1,13 +1,20 @@
 """Concurrent processes signing tokens with the same storage"""
 
 import json
+import uuid
 from multiprocessing import get_context
 
 import pytest
 
-from joserfc_wrapper import StorageFile, StorageVault, WrapJWK, WrapJWT
+from joserfc_wrapper import (
+    StorageFile,
+    StorageRedis,
+    StorageVault,
+    WrapJWK,
+    WrapJWT,
+)
 
-from .conftest import CLAIMS, vault_env
+from .conftest import CLAIMS, redis_url, vault_env
 
 # payload is deprecated, but still supported and tested
 pytestmark = pytest.mark.filterwarnings(
@@ -26,6 +33,12 @@ def storage_vault(mount: str) -> StorageVault:
     env = vault_env()
     assert env is not None
     return StorageVault(env["VAULT_ADDR"], env["VAULT_TOKEN"], mount)
+
+
+def storage_redis(prefix: str) -> StorageRedis:
+    url = redis_url()
+    assert url is not None
+    return StorageRedis.from_url(url, prefix=prefix)
 
 
 def sign(args: tuple) -> list[str]:
@@ -84,3 +97,14 @@ def test_storage_vault(payload):
     kids = run(storage_vault, mount, payload)
 
     assert_counted(storage_vault(mount), kids, payload)
+
+
+@pytest.mark.redis
+@pytest.mark.parametrize("payload", [0, 7])
+def test_storage_redis(payload):
+    if redis_url() is None:
+        pytest.skip("Redis is not configured (REDIS_URL)")
+    prefix = f"{uuid.uuid4().hex}:"
+    kids = run(storage_redis, prefix, payload)
+
+    assert_counted(storage_redis(prefix), kids, payload)

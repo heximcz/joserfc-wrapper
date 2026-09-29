@@ -149,6 +149,57 @@ class AbstractKeyStorage(ABC):
             f"{type(self).__name__} does not support listing keys."
         )
 
+    def revoke_jti(self, jti: str, expires_at: int) -> None:
+        """
+        Save a revoked token ID until the token expires
+
+        Required by token revocation ('WrapJWT(revocation=True)').
+
+        :param jti: token ID ('jti' claim)
+        :param expires_at: 'exp' of the token (unix timestamp), the record
+            is not needed after it
+        :raises NotImplementedError: the storage does not support it
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support revoking tokens."
+        )
+
+    def is_jti_revoked(self, jti: str) -> bool:
+        """
+        Return True when the token ID is revoked
+
+        Required by token revocation ('WrapJWT(revocation=True)').
+
+        :param jti: token ID ('jti' claim)
+        :raises NotImplementedError: the storage does not support it
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support revoking tokens."
+        )
+
+    def prune_revoked(self, now: int) -> int:
+        """
+        Delete records of revoked tokens which expired before 'now'
+
+        Called by 'WrapJWK.prune'. Storages with automatic expiration
+        (Redis) return 0.
+
+        :param now: unix timestamp
+        :returns: number of deleted records
+        :raises NotImplementedError: the storage does not support it
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support revoking tokens."
+        )
+
+    def supports_token_revocation(self) -> bool:
+        """Return True when the storage implements token revocation"""
+        cls = type(self)
+        return all(
+            getattr(cls, name) is not getattr(AbstractKeyStorage, name)
+            for name in ("revoke_jti", "is_jti_revoked", "prune_revoked")
+        )
+
     def delete_keys(self, kid: str) -> None:
         """
         Delete keys from the storage

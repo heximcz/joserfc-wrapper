@@ -2,9 +2,10 @@ import uuid
 from unittest.mock import patch
 
 import pytest
-from hvac.exceptions import InvalidRequest
+from hvac.exceptions import InvalidPath, InvalidRequest
 
 from joserfc_wrapper import AbstractKeyStorage, KeysSaveError, StorageVault
+from joserfc_wrapper.TokenHeader import jti_digest
 
 KEYS = {
     "keys": {"private": {}, "public": {}, "secret": {}},
@@ -286,3 +287,39 @@ class TestLifecycleKvV2:
         last = kv.create_or_update_secret.call_args.kwargs
         assert last["cas"] == 4
         assert last["secret"] == {**KEYS, "counter": 1, "revoked": 7}
+
+    def test_revoke_jti(self, vault, kv):
+        vault.revoke_jti("jti1", 100)
+
+        call = kv.create_or_update_secret.call_args.kwargs
+        assert call["path"] == f"revoked/{jti_digest('jti1')}"
+        assert call["secret"] == {"exp": 100}
+
+    def test_is_jti_revoked(self, vault, kv):
+        kv.read_secret_version.side_effect = [
+            v2_secret({"exp": 100}, 1),
+            InvalidPath(),
+        ]
+
+        assert vault.is_jti_revoked("jti1")
+        assert not vault.is_jti_revoked("jti2")
+        path = kv.read_secret_version.call_args.kwargs["path"]
+        assert path == f"revoked/{jti_digest('jti2')}"
+
+    def test_prune_revoked(self, vault, kv):
+        kv.list_secrets.return_value = {"data": {"keys": ["a", "b", "c"]}}
+        kv.read_secret_version.side_effect = [
+            v2_secret({"exp": 50}, 1),
+            v2_secret({"exp": 150}, 1),
+            InvalidPath(),  # deleted by another process
+        ]
+
+        assert vault.prune_revoked(100) == 1
+        kv.delete_metadata_and_all_versions.assert_called_once_with(
+            path="revoked/a", mount_point="mount"
+        )
+
+    def test_prune_revoked_nothing_revoked(self, vault, kv):
+        kv.list_secrets.side_effect = InvalidPath()
+
+        assert vault.prune_revoked(100) == 0

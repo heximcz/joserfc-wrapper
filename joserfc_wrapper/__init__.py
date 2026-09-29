@@ -16,6 +16,7 @@ from .Exceptions import (
     TokenKidInvalidError,
     TokenKidUnknownError,
     TokenKeyRevokedError,
+    TokenRevokedError,
     TokenSignatureError,
     TokenExpiredError,
     TokenNotYetValidError,
@@ -24,6 +25,7 @@ from .Exceptions import (
 from .AbstractKeyStorage import AbstractKeyStorage
 from .StorageVault import StorageVault
 from .StorageFile import StorageFile
+from .StorageRedis import StorageRedis
 from .WrapJWK import WrapJWK
 from .WrapJWT import WrapJWT
 from .WrapJWE import WrapJWE
@@ -44,6 +46,7 @@ __all__ = [
     "TokenKidInvalidError",
     "TokenKidUnknownError",
     "TokenKeyRevokedError",
+    "TokenRevokedError",
     "TokenSignatureError",
     "TokenExpiredError",
     "TokenNotYetValidError",
@@ -51,6 +54,7 @@ __all__ = [
     "AbstractKeyStorage",
     "StorageVault",
     "StorageFile",
+    "StorageRedis",
     "WrapJWK",
     "WrapJWT",
     "WrapJWE",

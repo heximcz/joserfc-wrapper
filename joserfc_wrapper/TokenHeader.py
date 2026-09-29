@@ -1,6 +1,7 @@
 """compact token header helpers"""
 
 import base64
+import hashlib
 import binascii
 import json
 import uuid
@@ -46,6 +47,16 @@ def read_kid(token: str, required: bool = True) -> str:
     if not isinstance(kid, str) or not is_valid_kid(kid):
         raise TokenKidInvalidError
     return kid
+
+
+def jti_digest(jti: str) -> str:
+    """
+    Storage name of a token ID: SHA-256 hex digest
+
+    A custom 'jti' is any string, the digest is safe as a file name, Vault
+    path or Redis key.
+    """
+    return hashlib.sha256(jti.encode("utf-8")).hexdigest()
 
 
 def is_valid_kid(kid: str) -> bool:
