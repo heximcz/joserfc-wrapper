@@ -8,25 +8,14 @@ from joserfc_wrapper.abstract_key_storage import (
     AbstractKeyStorage,
     KEY_CACHE_TTL,
 )
-from joserfc_wrapper.token_header import is_valid_kid, jti_digest
+from joserfc_wrapper.token_header import (
+    is_valid_kid,
+    jti_digest,
+    require_valid_kid,
+)
 
 # the key record is changed by Lua scripts, Redis runs a script atomically
 # (no other command runs in the meantime), safe for concurrent processes
-
-INCREASE_COUNTER = """
-local data = redis.call("GET", KEYS[1])
-if not data then
-    return redis.error_reply("keys not found")
-end
-local record = cjson.decode(data)
-local limit = tonumber(ARGV[1])
-if limit > 0 and record.counter >= limit then
-    return false
-end
-record.counter = record.counter + 1
-redis.call("SET", KEYS[1], cjson.encode(record))
-return record.counter
-"""
 
 REPLACE_LAST_KEYS = """
 local data = redis.call("GET", KEYS[1])
@@ -116,7 +105,6 @@ class StorageRedis(AbstractKeyStorage):
                 "one slot), e.g. prefix='{jwt}:'."
             )
         # scripts are registered once, redis-py sends them by SHA
-        self.__increase_counter = client.register_script(INCREASE_COUNTER)
         self.__replace_last_keys = client.register_script(REPLACE_LAST_KEYS)
         self.__update_metadata = client.register_script(UPDATE_METADATA)
         self.__save_keys = client.register_script(SAVE_KEYS)
@@ -156,24 +144,27 @@ class StorageRedis(AbstractKeyStorage):
         """Load keys"""
         if kid == "":
             kid = self.get_last_kid()
-        return kid, {"data": self.__get_json(self.__key(kid))}
+        return kid, {
+            "data": self.__get_json(self.__key(require_valid_kid(kid)))
+        }
 
     def save_keys(self, kid: str, keys: dict) -> None:
         """Save keys and set them as the last keys (one transaction)"""
         self.__save_keys(
-            keys=[self.__key(kid), self.__key("last-key-id")],
+            keys=[
+                self.__key(require_valid_kid(kid)),
+                self.__key("last-key-id"),
+            ],
             args=[json.dumps(keys), json.dumps({"kid": kid})],
         )
-
-    def increase_counter(self, kid: str, limit: int = 0) -> int | None:
-        """Atomically increase the counter of signed tokens of a key"""
-        result = self.__increase_counter(keys=[self.__key(kid)], args=[limit])
-        return None if result is None else int(result)
 
     def replace_last_keys(self, last_kid: str, kid: str, keys: dict) -> str:
         """Atomically save new keys as the last keys (key rotation)"""
         result = self.__replace_last_keys(
-            keys=[self.__key("last-key-id"), self.__key(kid)],
+            keys=[
+                self.__key("last-key-id"),
+                self.__key(require_valid_kid(kid)),
+            ],
             args=[last_kid, kid, json.dumps(keys)],
         )
         return result.decode() if isinstance(result, bytes) else result
@@ -181,7 +172,8 @@ class StorageRedis(AbstractKeyStorage):
     def update_metadata(self, kid: str, metadata: dict) -> None:
         """Atomically update metadata fields of a key record"""
         self.__update_metadata(
-            keys=[self.__key(kid)], args=[json.dumps(metadata)]
+            keys=[self.__key(require_valid_kid(kid))],
+            args=[json.dumps(metadata)],
         )
 
     def list_kids(self) -> list[str]:
@@ -197,9 +189,7 @@ class StorageRedis(AbstractKeyStorage):
 
     def delete_keys(self, kid: str) -> None:
         """Delete keys from the storage"""
-        if not is_valid_kid(kid):
-            raise ValueError(f"Invalid Key ID '{kid}'.")
-        self.__client.delete(self.__key(kid))
+        self.__client.delete(self.__key(require_valid_kid(kid)))
 
     def revoke_jti(self, jti: str, expires_at: int) -> None:
         """Save a revoked token ID, Redis deletes it when the token expires"""
@@ -219,7 +209,10 @@ class StorageRedis(AbstractKeyStorage):
 
     def save_last_kid(self, kid: str) -> None:
         """Save last Key ID"""
-        self.__client.set(self.__key("last-key-id"), json.dumps({"kid": kid}))
+        self.__client.set(
+            self.__key("last-key-id"),
+            json.dumps({"kid": require_valid_kid(kid)}),
+        )
 
     def __key(self, name: str) -> str:
         return f"{self.prefix}{name}"

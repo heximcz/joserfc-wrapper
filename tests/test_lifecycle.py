@@ -1,8 +1,7 @@
-"""Key lifecycle: metadata, rotation by age, rotate, revoke, prune (0.5.0)"""
+"""Key lifecycle: rotation by age, revoke, prune, max_token_lifetime"""
 
 import json
 import time
-import uuid
 from unittest.mock import patch
 
 import pytest
@@ -11,16 +10,15 @@ from joserfc_wrapper import (
     ConfigurationError,
     CreateTokenError,
     KeysLoadError,
-    KeysNotFoundError,
-    StorageFile,
     TokenKeyRevokedError,
     WrapJWK,
     WrapJWT,
 )
 
-from .test_jwk import LegacyStorage
+from .conftest import key_record, last_kid
+from .test_jwk import MinimalStorage
 
-CLAIMS = {"iss": "https://example.com", "aud": "api", "uid": 1}
+ISS, AUD = "https://example.com", "api"
 DAY = 86400
 
 
@@ -29,11 +27,7 @@ def now() -> int:
 
 
 def jwt_for(jwk: WrapJWK, **config) -> WrapJWT:
-    return WrapJWT(jwk, issuer=CLAIMS["iss"], audience=CLAIMS["aud"], **config)
-
-
-def record(tmp_path, kid: str) -> dict:
-    return json.loads((tmp_path / f"{kid}.json").read_text())["data"]
+    return WrapJWT(jwk, issuer=ISS, audience=AUD, **config)
 
 
 def later(seconds: int):
@@ -44,90 +38,41 @@ def later(seconds: int):
 # metadata
 
 
-def test_generate_keys_sets_created(jwk):
-    assert abs(jwk.get_created() - now()) <= 2
-    assert jwk.get_retired() is None
-    assert jwk.get_revoked() is None
-    assert not jwk.is_revoked()
+def test_new_keys_have_created(jwk):
+    record = key_record(jwk)
+
+    assert abs(record["created"] - now()) <= 2
+    assert "retired" not in record and "revoked" not in record
 
 
-def test_metadata_saved_and_kept_by_counter(jwk, tmp_path):
-    """increase_counter must not drop metadata of the record"""
-    created = jwk.get_created()
-    WrapJWT(jwk).create(dict(CLAIMS), exp=60)
+def test_create_does_not_write_to_the_storage(jwk, storage, tmp_path):
+    """No counter since 1.0.0"""
+    path = tmp_path / f"{last_kid(jwk)}.json"
+    before = path.read_text()
 
-    data = record(tmp_path, jwk.get_kid())
-    assert data["counter"] == 1
-    assert data["created"] == created
+    with patch.object(storage, "update_metadata") as update:
+        jwt_for(jwk).create({"sub": "1"}, exp=60)
 
-
-def test_legacy_default_counter_keeps_metadata():
-    storage = LegacyStorage()
-    jwk = WrapJWK(storage)
-    jwk.generate_keys()
-    jwk.save_keys()
-
-    WrapJWT(jwk).create(dict(CLAIMS), exp=60)
-
-    assert storage.data[jwk.get_kid()]["created"] == jwk.get_created()
+    assert path.read_text() == before
+    update.assert_not_called()
 
 
-def test_keys_without_metadata_load(storage, tmp_path):
-    """Keys saved by versions older than 0.5.0 have no metadata"""
-    kid = uuid.uuid4().hex
-    old = WrapJWK(storage)
-    old.generate_keys()
-    data = {
-        "keys": {
-            "private": old.get_private_key(),
-            "public": old.get_public_key(),
-            "secret": old.get_secret_key(),
-        },
-        "counter": 3,
-    }
-    (tmp_path / f"{kid}.json").write_text(json.dumps({"data": data}))
-    (tmp_path / "last-key-id.json").write_text(json.dumps({"kid": kid}))
+def test_file_update_metadata(jwk, storage):
+    storage.update_metadata(last_kid(jwk), {"revoked": 123})
 
-    jwk = WrapJWK(storage)
-    jwk.load_keys()
-
-    assert jwk.get_kid() == kid
-    assert jwk.get_created() is None
-    assert not jwk.is_revoked()
-
-
-def test_file_update_metadata(jwk, storage, tmp_path):
-    storage.update_metadata(jwk.get_kid(), {"revoked": 123})
-
-    data = record(tmp_path, jwk.get_kid())
-    assert data["revoked"] == 123
-    assert data["created"] == jwk.get_created()
-
-
-def test_legacy_update_metadata_keeps_last_kid():
-    storage = LegacyStorage()
-    jwk = WrapJWK(storage)
-    jwk.generate_keys()
-    jwk.save_keys()
-    first = jwk.get_kid()
-    jwk.generate_keys()
-    jwk.save_keys()
-
-    storage.update_metadata(first, {"revoked": 1})
-
-    assert storage.data[first]["revoked"] == 1
-    assert storage.get_last_kid() == jwk.get_kid()
+    record = key_record(jwk)
+    assert record["revoked"] == 123 and "created" in record
 
 
 def test_file_list_and_delete(jwk, storage, tmp_path):
-    first = jwk.get_kid()
-    jwk.rotate()
+    first = last_kid(jwk)
+    second = jwk.rotate()
     (tmp_path / "notes.json").write_text("{}")
 
-    assert storage.list_kids() == sorted([first, jwk.get_kid()])
+    assert storage.list_kids() == sorted([first, second])
 
     storage.delete_keys(first)
-    assert storage.list_kids() == [jwk.get_kid()]
+    assert storage.list_kids() == [second]
     with pytest.raises(ValueError):
         storage.delete_keys("../last-key-id")
 
@@ -135,119 +80,81 @@ def test_file_list_and_delete(jwk, storage, tmp_path):
 # rotation by age
 
 
-def test_rotation_by_max_key_age(jwk, storage):
-    first = jwk.get_kid()
+def test_rotation_by_max_key_age(jwk):
+    first = last_kid(jwk)
     jwt = jwt_for(jwk, max_key_age=DAY)
 
-    jwt.create({"uid": 1}, exp=60)
-    assert storage.get_last_kid() == first
+    jwt.create({"sub": "1"}, exp=60)
+    assert last_kid(jwk) == first
 
     with later(DAY + 1):
-        jwt.create({"uid": 1}, exp=60)
-    assert storage.get_last_kid() != first
-
-    retired, last = WrapJWK(storage), WrapJWK(storage)
-    retired.load_keys(first)
-    last.load_keys()
-    assert retired.get_retired() == last.get_created()
-
-
-def test_keys_without_created_rotate_once(storage, tmp_path):
-    jwk = WrapJWK(storage)
-    jwk.generate_keys()
-    jwk.save_keys()
-    first = jwk.get_kid()
-    data = record(tmp_path, first)
-    del data["created"]
-    (tmp_path / f"{first}.json").write_text(json.dumps({"data": data}))
-    jwt = jwt_for(jwk, max_key_age=DAY)
-
-    jwt.create({"uid": 1}, exp=60)
-    second = storage.get_last_kid()
-    jwt.create({"uid": 1}, exp=60)
-
+        token = jwt.create({"sub": "1"}, exp=60)
+    second = last_kid(jwk)
     assert second != first
-    assert storage.get_last_kid() == second
+    assert jwt.decode(token).header["kid"] == second
+    assert key_record(jwk, first)["retired"] == key_record(jwk)["created"]
+
+
+def test_rotation_to_ed25519(jwk):
+    jwt = jwt_for(jwk, max_key_age=DAY, key_algorithm="Ed25519")
+    old = jwt.create({"sub": "1"}, exp=60)
+
+    with later(DAY + 1):
+        new = jwt.create({"sub": "1"}, exp=60)
+        assert jwt.verify(new)
+
+    # the algorithm of the key signs, the old token stays valid
+    assert jwt.decode(old).header["alg"] == "ES256"
+    assert jwt.decode(new).header["alg"] == "Ed25519"
+    assert jwt.verify(old)
 
 
 def test_revoked_last_keys_are_not_used(jwk, storage):
     """A revoked last key (e.g. revoked by another tool) is rotated"""
-    first = jwk.get_kid()
+    first = last_kid(jwk)
     storage.update_metadata(first, {"revoked": now()})
 
-    raw = jwt_for(jwk).create({"uid": 1}, exp=60)
+    token = jwt_for(jwk).create({"sub": "1"}, exp=60)
 
-    assert jwt_for(jwk).verify(raw).header["kid"] != first
-
-
-# rotate
-
-
-def test_rotate_creates_first_keys(storage):
-    jwk = WrapJWK(storage)
-    jwk.rotate()
-
-    assert storage.get_last_kid() == jwk.get_kid()
-
-
-def test_rotate_retires_previous_keys(jwk, storage):
-    first = jwk.get_kid()
-    raw = jwt_for(jwk).create({"uid": 1}, exp=60)
-
-    jwk.rotate()
-
-    assert storage.get_last_kid() == jwk.get_kid() != first
-    # tokens signed by the retired keys stay valid
-    assert jwt_for(jwk).verify(raw).header["kid"] == first
-    old = WrapJWK(storage)
-    old.load_keys(first)
-    assert old.get_retired() is not None
+    assert jwt_for(jwk).verify(token).header["kid"] != first
 
 
 # revoke
 
 
 def test_revoke_keys(jwk, storage):
-    first = jwk.get_kid()
-    raw = jwt_for(jwk).create({"uid": 1}, exp=60)
-    jwk.rotate()
-    last = jwk.get_kid()
+    first = last_kid(jwk)
+    token = jwt_for(jwk).create({"sub": "1"}, exp=60)
+    second = jwk.rotate()
 
     jwk.revoke(first)
 
     with pytest.raises(TokenKeyRevokedError):
-        jwt_for(jwk).verify(raw)
-    assert storage.get_last_kid() == last
+        jwt_for(jwk).verify(token)
+    assert storage.get_last_kid() == second
 
 
 def test_revoke_last_keys_generates_new_keys(jwk, storage):
-    first = jwk.get_kid()
-    raw = jwt_for(jwk).create({"uid": 1}, exp=60)
+    first = last_kid(jwk)
+    token = jwt_for(jwk).create({"sub": "1"}, exp=60)
 
     jwk.revoke(first)
 
     assert storage.get_last_kid() != first
     with pytest.raises(TokenKeyRevokedError):
-        jwt_for(jwk).verify(raw)
+        jwt_for(jwk).verify(token)
     # creating tokens continues with the new keys
-    new = jwt_for(jwk).create({"uid": 1}, exp=60)
+    new = jwt_for(jwk).create({"sub": "1"}, exp=60)
     assert jwt_for(jwk).verify(new).header["kid"] == storage.get_last_kid()
-
-
-def test_revoke_unknown_keys(jwk):
-    with pytest.raises(KeysNotFoundError):
-        jwk.revoke(uuid.uuid4().hex)
 
 
 # prune
 
 
 def test_prune(jwk, storage):
-    first = jwk.get_kid()
-    jwk.rotate()
-    second = jwk.get_kid()
-    jwk.rotate()
-    last = jwk.get_kid()
+    first = last_kid(jwk)
+    second = jwk.rotate()
+    last = jwk.rotate()
 
     # retired keys are kept until their tokens expire
     assert not jwk.prune(max_token_lifetime=3600)
@@ -266,21 +173,39 @@ def test_prune_leeway(jwk):
         assert not jwk.prune(max_token_lifetime=3600, leeway=60)
 
 
-def test_prune_keeps_keys_without_retired(storage, tmp_path):
-    jwk = WrapJWK(storage)
-    jwk.generate_keys()
-    jwk.save_keys()
-    first = jwk.get_kid()
-    jwk.generate_keys()
-    jwk.save_keys()  # the previous keys are not marked retired
+def test_prune_keeps_keys_of_0_4(jwk, storage, tmp_path):
+    """Keys of versions older than 0.5.0 have no times, never deleted"""
+    first = last_kid(jwk)
+    jwk.rotate()
+    path = tmp_path / f"{first}.json"
+    record = json.loads(path.read_text())
+    del record["data"]["retired"], record["data"]["created"]
+    path.write_text(json.dumps(record))
 
     with later(10 * DAY):
+        assert not jwk.prune(max_token_lifetime=3600)
         assert not jwk.prune(max_token_lifetime=3600)
     assert first in storage.list_kids()
 
 
-def test_prune_revoked_keys(jwk, storage):
-    first = jwk.get_kid()
+def test_prune_retires_keys_never_retired(jwk, storage, tmp_path):
+    """Not the last keys, with created, without retired: retired, later deleted"""
+    first = last_kid(jwk)
+    jwk.rotate()
+    path = tmp_path / f"{first}.json"
+    record = json.loads(path.read_text())
+    del record["data"]["retired"]
+    path.write_text(json.dumps(record))
+
+    with later(10 * DAY):
+        assert not jwk.prune(max_token_lifetime=3600)
+    assert key_record(jwk, first)["retired"] is not None
+    with later(10 * DAY + 3602):
+        assert jwk.prune(max_token_lifetime=3600) == [first]
+
+
+def test_prune_revoked_keys(jwk):
+    first = last_kid(jwk)
     jwk.revoke(first)
 
     with later(3600 + 2):
@@ -296,9 +221,8 @@ def test_prune_invalid_parameters(jwk, lifetime, leeway):
 
 
 def test_prune_storage_without_listing():
-    jwk = WrapJWK(LegacyStorage())
-    jwk.generate_keys()
-    jwk.save_keys()
+    jwk = WrapJWK(MinimalStorage())
+    jwk.rotate()
 
     with pytest.raises(KeysLoadError, match="does not support listing"):
         jwk.prune(max_token_lifetime=60)
@@ -319,39 +243,18 @@ def test_wrapjwt_prune(jwk):
 def test_max_token_lifetime(jwk):
     jwt = jwt_for(jwk, max_token_lifetime=3600)
 
-    assert jwt.verify(jwt.create({"uid": 1}, exp=3600))
+    assert jwt.verify(jwt.create({"sub": "1"}, exp=3600))
     with pytest.raises(CreateTokenError, match="max_token_lifetime"):
-        jwt.create({"uid": 1}, exp=3601)
+        jwt.create({"sub": "1"}, exp=3601)
     with pytest.raises(CreateTokenError, match="max_token_lifetime"):
-        jwt.create({"uid": 1, "exp": now() + 7200})
+        jwt.create({"sub": "1", "exp": now() + 7200})
     with pytest.raises(CreateTokenError, match="required"):
-        jwt.create({"uid": 1})
+        jwt.create({"sub": "1"})
 
 
 def test_max_token_lifetime_with_default_exp(jwk):
     jwt = jwt_for(jwk, max_token_lifetime=3600, default_exp=600)
 
-    assert jwt.verify(jwt.create({"uid": 1}))
+    assert jwt.verify(jwt.create({"sub": "1"}))
     with pytest.raises(ConfigurationError):
         jwt_for(jwk, max_token_lifetime=600, default_exp=3600)
-
-
-def test_payload_is_deprecated(jwk):
-    with pytest.warns(DeprecationWarning, match="max_key_age"):
-        jwt_for(jwk).create({"uid": 1}, exp=60, payload=10)
-
-
-# list_keys
-
-
-def test_list_keys(jwk, storage):
-    first = jwk.get_kid()
-    jwk.rotate()
-    jwk.revoke(first)
-
-    keys = jwk.list_keys()
-
-    assert [k["kid"] for k in keys] == [first, storage.get_last_kid()]
-    assert keys[0]["retired"] is not None and keys[0]["revoked"] is not None
-    assert keys[1]["last"] and keys[1]["retired"] is None
-    assert all("private" not in k and "keys" not in k for k in keys)

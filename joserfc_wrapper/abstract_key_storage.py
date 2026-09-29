@@ -4,6 +4,8 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
+from joserfc_wrapper.algorithms import key_algorithm
+
 #: default lifetime of cached verification keys in seconds
 KEY_CACHE_TTL = 300
 
@@ -116,7 +118,7 @@ class AbstractKeyStorage(ABC):
     def load_jwks(self) -> dict:
         """
         Return the public keys as a JWK Set (RFC 7517): all keys in the
-        storage except revoked keys, without private keys
+        storage except revoked and unsupported keys, without private keys
 
         The list of keys is always read from the storage (new keys are
         visible immediately), the keys are read by 'load_verification_key'
@@ -133,10 +135,14 @@ class AbstractKeyStorage(ABC):
             except self.not_found_errors:
                 # deleted by 'prune' in the meantime
                 continue
-            if revoked is None:
-                keys.append(
-                    {**public, "kid": kid, "use": "sig", "alg": "ES256"}
-                )
+            if revoked is not None:
+                continue
+            try:
+                algorithm = key_algorithm(public)
+            except ValueError:
+                # an unsupported key (e.g. RSA in a custom storage)
+                continue
+            keys.append({**public, "kid": kid, "use": "sig", "alg": algorithm})
         return {"keys": keys}
 
     def __cache(self) -> KeyCache:
@@ -152,128 +158,62 @@ class AbstractKeyStorage(ABC):
     @abstractmethod
     def get_last_kid(self) -> str:
         """
-        Return last Key ID
+        Return the last Key ID (the keys which sign new tokens)
 
-        :returns: Last Key ID
-        :rtype: str
-        :raises: Any
+        :raises: Any, an error of 'not_found_errors' without keys
         """
-        pass
 
     @abstractmethod
     def load_keys(self, kid: str = "") -> tuple[str, dict]:
         """
-        Load keys from a storage
+        Load a key record
 
-        The implementation of this abstract method should include
-        a call methods 'get_last_kid' defined in this class.
-
-        For example::
-
-            def load_keys(self, kid: str):
-                if kid == "":
-                    kid = self.get_last_kid()
-                # More logic...
-
-        :param kid: Key ID
-        :type kid: str
-        :returns: Key ID, Keys (by default last keys)
-        :rtype: tuple[str, dict]
-        :raises: Any
+        :param kid: Key ID, "" = the last keys ('get_last_kid')
+        :returns: Key ID and {"data": key record}
+        :raises: Any, an error of 'not_found_errors' for unknown keys
         """
-        pass
 
     @abstractmethod
     def save_keys(self, kid: str, keys: dict) -> None:
         """
-        Save keys to a storage
-
-        :param kid: - unicate Key ID
-        :type kid: str
-        :param keys: - { keys: { 'public': dict, 'private': dict } }
-        :type keys: dict
-        :returns: None
-        :raises: Any
-        """
-        pass
-
-    def increase_counter(self, kid: str, limit: int = 0) -> int | None:
-        """
-        Atomically increase the counter of signed tokens of a key
-
-        Override it with an atomic implementation to be safe for concurrent
-        processes using the same storage. The default implementation uses
-        'load_keys' and 'save_keys' and is not atomic. It must not change
-        the last Key ID.
+        Save keys and set them as the last keys
 
         :param kid: Key ID
-        :type kid: str
-        :param limit: 0 = unlimited, otherwise the counter is not increased
-            when it already reached the limit
-        :type limit: int
-        :returns: New counter value or None when the limit is reached
-        :rtype: int | None
+        :param keys: the key record
+            {"keys": {"private", "public", "secret"}, "created", ...}
         :raises: Any
         """
-        last_kid = self.get_last_kid()
-        _, stored = self.load_keys(kid)
-        counter = stored["data"]["counter"]
-        if limit and counter >= limit:
-            return None
-        counter += 1
-        # keep all fields of the record (metadata)
-        self.save_keys(kid, {**stored["data"], "counter": counter})
-        # 'save_keys' sets the last Key ID
-        if last_kid != kid:
-            self.save_last_kid(last_kid)
-        return counter
 
+    @abstractmethod
     def replace_last_keys(self, last_kid: str, kid: str, keys: dict) -> str:
         """
         Atomically save new keys as the last keys (key rotation)
 
         The new keys are saved only when the last Key ID is still
-        'last_kid', so concurrent processes rotate the keys only once.
-        Override it with an atomic implementation, the default
-        implementation is not atomic.
+        'last_kid', so concurrent processes rotate the keys only once. It
+        must be atomic (e.g. a lock, check-and-set or a transaction).
 
         :param last_kid: expected current last Key ID
-        :type last_kid: str
-        :param kid: Key ID of the new keys
-        :type kid: str
-        :param keys: - { keys: { 'public': dict, 'private': dict }, ... }
-        :type keys: dict
+        :param keys: the key record
+            {"keys": {"private", "public", "secret"}, "created", ...}
         :returns: The last Key ID after the operation, 'kid' when the new
             keys were saved, otherwise the Key ID saved by another process
-        :rtype: str
         :raises: Any
         """
-        current = self.get_last_kid()
-        if current != last_kid:
-            return current
-        self.save_keys(kid, keys)
-        return kid
 
+    @abstractmethod
     def update_metadata(self, kid: str, metadata: dict) -> None:
         """
         Atomically update metadata fields of a key record
 
-        Metadata are fields of the key record next to 'keys' and 'counter',
-        for example 'created', 'retired', 'revoked'. Override it with an
-        atomic implementation, the default implementation uses 'load_keys'
-        and 'save_keys' and is not atomic. It must not change the last
-        Key ID.
+        Metadata are fields of the key record next to 'keys', for example
+        'created', 'retired', 'revoked'. It must keep all other fields of
+        the record and must not change the last Key ID.
 
         :param kid: Key ID
         :param metadata: fields to set in the key record
         :raises: Any
         """
-        last_kid = self.get_last_kid()
-        _, stored = self.load_keys(kid)
-        self.save_keys(kid, {**stored["data"], **metadata})
-        # 'save_keys' sets the last Key ID
-        if last_kid != kid:
-            self.save_last_kid(last_kid)
 
     def list_kids(self) -> list[str]:
         """
@@ -353,35 +293,11 @@ class AbstractKeyStorage(ABC):
             f"{type(self).__name__} does not support deleting keys."
         )
 
+    @abstractmethod
     def save_last_kid(self, kid: str) -> None:
         """
         Save the last Key ID (the keys which sign new tokens)
 
-        Implement it in a storage (since 0.8.0). The default implementation
-        calls '_save_last_id' of storages written for older versions, it
-        will be an abstract method in 1.0.0.
-
         :param kid: Key ID
-        :raises NotImplementedError: the storage implements neither
-            'save_last_kid' nor '_save_last_id'
         :raises: Any
         """
-        if type(self)._save_last_id is AbstractKeyStorage._save_last_id:
-            raise NotImplementedError(
-                f"{type(self).__name__} must implement 'save_last_kid'."
-            )
-        self._save_last_id(kid)
-
-    def _save_last_id(self, kid: str) -> None:
-        """
-        Save the last Key ID, deprecated since 0.8.0 (removed in 1.0.0),
-        implement 'save_last_kid'
-
-        :param kid: Key ID
-        :raises NotImplementedError: the storage implements neither
-        """
-        if type(self).save_last_kid is AbstractKeyStorage.save_last_kid:
-            raise NotImplementedError(
-                f"{type(self).__name__} must implement 'save_last_kid'."
-            )
-        self.save_last_kid(kid)

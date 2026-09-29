@@ -19,7 +19,8 @@ class WrapJWE:
 
     def __init__(self, wrapjwk: WrapJWK) -> None:
         """
-        :param wrapjwk: for non vault storage
+        :param wrapjwk: the keys (the secret key of each key encrypts)
+        :raises ObjectTypeError: wrapjwk is not WrapJWK
         """
         if not isinstance(wrapjwk, WrapJWK):
             raise ObjectTypeError
@@ -32,7 +33,9 @@ class WrapJWE:
         :param data: Secret string or bytes
         :param kid: Key ID, default the last key
         :returns: Encrypted string, the header contains KID of the used key
-        :raises TypeError:
+        :raises TypeError: data is not a string or bytes
+        :raises KeysNotFoundError: unknown or invalid Key ID
+        :raises KeysLoadError: storage error
         """
         if isinstance(data, (str, bytes)):
             used_kid, secret = self.__jwk.load_secret_key(kid)
@@ -53,7 +56,9 @@ class WrapJWE:
         :param kid: Key ID, default KID from the header of the data,
             the last key for data without KID in the header
         :returns: Decrypted data
-        :raises TypeError:
+        :raises TypeError: data is not a string
+        :raises KeysNotFoundError: unknown or invalid Key ID
+        :raises KeysLoadError: storage error
         :raises TokenDecodeError: malformed data
         :raises TokenKidInvalidError: invalid KID in the header
         :raises JoseError: invalid data, other algorithms than A128KW and

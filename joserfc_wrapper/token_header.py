@@ -66,8 +66,8 @@ THUMBPRINT = re.compile(r"[A-Za-z0-9_-]{43}")
 
 def is_valid_kid(kid: str) -> bool:
     """
-    Key ID must be uuid4 in hex format (keys of versions up to 0.9.x) or
-    a RFC 7638 JWK thumbprint (base64url SHA-256, keys since 1.0.0)
+    Key ID must be a RFC 7638 JWK thumbprint (base64url SHA-256) or uuid4
+    in hex format (keys of the 0.x versions)
     """
     if not isinstance(kid, str):
         return False
@@ -78,3 +78,16 @@ def is_valid_kid(kid: str) -> bool:
         return parsed.version == 4 and parsed.hex == kid
     except ValueError:
         return False
+
+
+def require_valid_kid(kid: str) -> str:
+    """
+    A storage uses only valid Key IDs in file names, Vault paths and Redis
+    keys (no '../', no other records)
+
+    :returns: kid
+    :raises ValueError: invalid Key ID
+    """
+    if not is_valid_kid(kid):
+        raise ValueError(f"Invalid Key ID {kid!r}.")
+    return kid

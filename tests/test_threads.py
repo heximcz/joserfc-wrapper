@@ -1,8 +1,6 @@
-"""One WrapJWK, WrapJWT and WrapJWE shared by threads (0.8.0)"""
+"""One WrapJWK, WrapJWT and WrapJWE shared by threads"""
 
 from concurrent.futures import ThreadPoolExecutor
-
-import pytest
 
 from joserfc_wrapper import WrapJWE, WrapJWK, WrapJWT
 
@@ -10,8 +8,6 @@ THREADS = 8
 TOKENS = 25
 
 
-# payload is deprecated, it forces rotations during the test
-@pytest.mark.filterwarnings("ignore:.payload. is deprecated:DeprecationWarning")
 def test_shared_instances(storage):
     jwk = WrapJWK(storage)
     jwk.rotate()
@@ -22,10 +18,11 @@ def test_shared_instances(storage):
         results = []
         for i in range(TOKENS):
             uid = thread * TOKENS + i
+            # rotations during the test, WrapJWK keeps no state
+            if i % 7 == 0:
+                jwk.rotate("Ed25519" if thread % 2 else "ES256")
             secret = jwe.encrypt(f"secret {uid}")
-            token = jwt.create(
-                {"sub": str(uid), "sec": secret}, exp=60, payload=7
-            )
+            token = jwt.create({"sub": str(uid), "sec": secret}, exp=60)
             verified = jwt.verify(token)
             # the token belongs to this call, not to another thread
             assert verified.claims["sub"] == str(uid)
@@ -39,8 +36,6 @@ def test_shared_instances(storage):
         results = [r for rs in pool.map(work, range(THREADS)) for r in rs]
 
     assert sorted(uid for uid, _ in results) == list(range(THREADS * TOKENS))
-    # every key signed at most 'payload' tokens, all tokens are counted
-    kids = [kid for _, kid in results]
-    for kid in set(kids):
-        counter = storage.load_keys(kid)[1]["data"]["counter"]
-        assert counter == kids.count(kid) <= 7
+    # tokens of all keys (also retired) stay valid
+    kids = {kid for _, kid in results}
+    assert kids <= set(storage.list_kids())

@@ -1,6 +1,6 @@
 """Concurrent processes signing tokens with the same storage"""
 
-import json
+import time
 import uuid
 from multiprocessing import get_context
 
@@ -15,11 +15,6 @@ from joserfc_wrapper import (
 )
 
 from .conftest import CLAIMS, redis_url, vault_env
-
-# payload is deprecated, but still supported and tested
-pytestmark = pytest.mark.filterwarnings(
-    "ignore:.payload. is deprecated:DeprecationWarning"
-)
 
 PROCESSES = 6
 TOKENS = 20
@@ -42,69 +37,62 @@ def storage_redis(prefix: str) -> StorageRedis:
 
 
 def sign(args: tuple) -> list[str]:
-    factory, location, payload = args
+    factory, location = args
     jwt = WrapJWT(WrapJWK(factory(location)))
-    tokens = [jwt.create(dict(CLAIMS), payload=payload) for _ in range(TOKENS)]
+    tokens = [jwt.create(dict(CLAIMS), exp=60) for _ in range(TOKENS)]
     return [jwt.decode(t).header["kid"] for t in tokens]
 
 
-def run(factory, location: str, payload: int) -> list[str]:
-    """Sign tokens in parallel processes, return KID of each token"""
-    jwk = WrapJWK(factory(location))
-    jwk.generate_keys()
-    jwk.save_keys()
+def run(factory, location: str) -> tuple[str, list[str]]:
+    """
+    Revoke the last keys and sign tokens in parallel processes, every
+    process has to rotate the keys first
+
+    :returns: the revoked Key ID, Key IDs of the tokens
+    """
+    storage = factory(location)
+    WrapJWK(storage).rotate()
+    revoked = storage.get_last_kid()
+    storage.update_metadata(revoked, {"revoked": int(time.time())})
     with get_context("spawn").Pool(PROCESSES) as pool:
-        results = pool.map(sign, [(factory, location, payload)] * PROCESSES)
-    return [kid for kids in results for kid in kids]
+        results = pool.map(sign, [(factory, location)] * PROCESSES)
+    return revoked, [kid for kids in results for kid in kids]
 
 
-def counters(storage, kids: list[str]) -> dict[str, int]:
-    return {
-        kid: storage.load_keys(kid)[1]["data"]["counter"] for kid in set(kids)
-    }
+def assert_rotated_once(storage, revoked: str, kids: list[str]) -> None:
+    assert len(kids) == PROCESSES * TOKENS
+    # all processes use the keys of one rotation
+    assert len(set(kids)) == 1
+    assert kids[0] != revoked
+    assert storage.get_last_kid() == kids[0]
 
 
-def assert_counted(storage, kids: list[str], payload: int) -> None:
-    total = PROCESSES * TOKENS
-    assert len(kids) == total
-    counted = counters(storage, kids)
-    # every token is counted by the key which signed it
-    assert counted == {kid: kids.count(kid) for kid in counted}
-    if payload:
-        assert max(counted.values()) <= payload
-        assert len(counted) == -(-total // payload)
-    else:
-        assert len(counted) == 1
+def test_storage_file(tmp_path):
+    revoked, kids = run(storage_file, str(tmp_path))
 
-
-@pytest.mark.parametrize("payload", [0, 7])
-def test_storage_file(tmp_path, payload):
-    kids = run(storage_file, str(tmp_path), payload)
-
-    assert_counted(StorageFile(str(tmp_path)), kids, payload)
-    assert (
-        json.loads((tmp_path / "last-key-id.json").read_text())["kid"] in kids
-    )
+    storage = StorageFile(str(tmp_path))
+    assert_rotated_once(storage, revoked, kids)
+    assert sorted(storage.list_kids()) == sorted([revoked, kids[0]])
 
 
 @pytest.mark.vault
-@pytest.mark.parametrize("payload", [0, 7])
-def test_storage_vault(payload):
+def test_storage_vault():
     env = vault_env()
     if env is None:
         pytest.skip("Vault is not configured (VAULT_ADDR, VAULT_TOKEN, ...)")
     mount = env["VAULT_MOUNT"]
-    kids = run(storage_vault, mount, payload)
+    revoked, kids = run(storage_vault, mount)
 
-    assert_counted(storage_vault(mount), kids, payload)
+    assert_rotated_once(storage_vault(mount), revoked, kids)
 
 
 @pytest.mark.redis
-@pytest.mark.parametrize("payload", [0, 7])
-def test_storage_redis(payload):
+def test_storage_redis():
     if redis_url() is None:
         pytest.skip("Redis is not configured (REDIS_URL)")
     prefix = f"{uuid.uuid4().hex}:"
-    kids = run(storage_redis, prefix, payload)
+    revoked, kids = run(storage_redis, prefix)
 
-    assert_counted(storage_redis(prefix), kids, payload)
+    storage = storage_redis(prefix)
+    assert_rotated_once(storage, revoked, kids)
+    assert sorted(storage.list_kids()) == sorted([revoked, kids[0]])

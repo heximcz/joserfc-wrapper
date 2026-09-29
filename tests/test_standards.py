@@ -3,6 +3,7 @@
 import base64
 import json
 import time
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 from joserfc import jwe
 from joserfc import jwt as joserfc_jwt
 from joserfc.errors import JoseError
-from joserfc.jwk import ECKey, OctKey
+from joserfc.jwk import ECKey, OctKey, OKPKey
 
 from joserfc_wrapper import (
     ConfigurationError,
@@ -28,6 +29,8 @@ from joserfc_wrapper import (
 )
 from joserfc_wrapper.token_header import is_valid_kid
 
+from .conftest import key_part, last_kid
+
 ISS, AUD = "https://example.com", "api"
 # P-256 group order, a signature (r, s) is also valid as (r, n - s)
 ORDER = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
@@ -42,7 +45,7 @@ def b64json(value) -> str:
 
 
 def ec_private(jwk: WrapJWK) -> ec.EllipticCurvePrivateKey:
-    d = jwk.get_private_key()["d"]
+    d = key_part(jwk, "private")["d"]
     value = int.from_bytes(
         base64.urlsafe_b64decode(d + "=" * (-len(d) % 4)), "big"
     )
@@ -83,7 +86,7 @@ def claims(**changes) -> dict:
 
 
 def header(keys: WrapJWK, **changes) -> dict:
-    return {"alg": "ES256", "kid": keys.get_kid(), **changes}
+    return {"alg": "ES256", "kid": last_kid(keys), **changes}
 
 
 def test_manual_signer_is_valid(keys, verifier):
@@ -102,7 +105,7 @@ def test_alg_none(keys, verifier):
 
 def test_alg_hs256_with_the_public_key(keys, verifier):
     """Key confusion: the public key used as an HMAC secret"""
-    secret = OctKey.import_key(json.dumps(keys.get_public_key()).encode())
+    secret = OctKey.import_key(json.dumps(key_part(keys, "public")).encode())
     token = joserfc_jwt.encode(
         header(keys, alg="HS256"), claims(), secret, algorithms=["HS256"]
     )
@@ -193,7 +196,8 @@ def test_duplicate_claims_last_wins(keys, verifier):
     """RFC 7519 allows the lexically last duplicate"""
     exp = int(time.time()) + 60
     payload = (
-        f'{{"iss":"https://evil","iss":"{ISS}","aud":"{AUD}","exp":{exp}}}'
+        f'{{"iss":"https://evil","iss":"{ISS}","aud":"{AUD}",'
+        f'"sub":"1","exp":{exp}}}'
     )
 
     assert verifier.verify(sign(keys, header(keys), b64(payload.encode())))
@@ -252,9 +256,9 @@ def test_jwe_data_of_this_library(keys):
     ],
 )
 def test_jwe_other_algorithms(keys, protected, algorithms):
-    secret = OctKey.import_key(keys.get_secret_key())
+    secret = OctKey.import_key(key_part(keys, "secret"))
     data = jwe.encrypt_compact(
-        {**protected, "kid": keys.get_kid()},
+        {**protected, "kid": last_kid(keys)},
         b"secret",
         secret,
         algorithms=algorithms,
@@ -268,7 +272,7 @@ def test_jwe_other_algorithms(keys, protected, algorithms):
 
 
 def thumbprint(jwk: WrapJWK) -> str:
-    public = jwk.get_public_key()
+    public = key_part(jwk, "public")
     members = {k: public[k] for k in ("crv", "kty", "x", "y")}
     digest = hashes.Hash(hashes.SHA256())
     digest.update(json.dumps(members, separators=(",", ":")).encode())
@@ -291,28 +295,32 @@ def test_kid_formats(kid, valid):
     assert is_valid_kid(kid) is valid
 
 
-def test_thumbprint_kid_keys(storage):
-    """Keys saved with a thumbprint Key ID (by 1.0.0) verify tokens"""
-    jwk = WrapJWK(storage)
-    jwk.generate_keys()
-    kid = thumbprint(jwk)
+def test_kid_is_rfc7638_thumbprint(keys):
+    """Keys created by 1.0.0 have the JWK thumbprint as the Key ID"""
+    assert last_kid(keys) == thumbprint(keys)
+
+
+def test_keys_of_versions_before_1_0(storage, keys):
+    """A record of 0.x (uuid Key ID, counter) still loads and verifies"""
+    kid = uuid.uuid4().hex
     record = {
         "keys": {
-            "private": jwk.get_private_key(),
-            "public": jwk.get_public_key(),
-            "secret": jwk.get_secret_key(),
+            "private": key_part(keys, "private"),
+            "public": key_part(keys, "public"),
+            "secret": key_part(keys, "secret"),
         },
-        "counter": 0,
-        "created": int(time.time()),
+        "counter": 7,
     }
     storage.save_keys(kid, record)
-    token = sign(jwk, {"alg": "ES256", "kid": kid}, b64json(claims()))
+    token = sign(keys, {"alg": "ES256", "kid": kid}, b64json(claims()))
 
     assert WrapJWT(WrapJWK(storage), issuer=ISS, audience=AUD).verify(token)
     assert kid in storage.list_kids()
+    assert WrapJWE(keys).decrypt(WrapJWE(keys).encrypt("x", kid=kid)) == b"x"
     jwks = WrapJWK(storage).jwks()
     session = MagicMock()
     session.get.return_value.json.return_value = jwks
+    session.get.return_value.url = "https://x/jwks.json"
     remote = WrapJWK(StorageJWKS("https://x/jwks.json", session=session))
     assert WrapJWT(remote, issuer=ISS, audience=AUD).verify(token)
 
@@ -361,3 +369,92 @@ def test_token_type_missing_header(keys):
 def test_invalid_token_type(keys, token_type):
     with pytest.raises(ConfigurationError):
         WrapJWT(keys, token_type=token_type)
+
+
+# algorithms of the keys (1.0.0): the algorithm belongs to the key
+
+
+@pytest.fixture
+def ed_keys(storage) -> WrapJWK:
+    jwk = WrapJWK(storage)
+    jwk.rotate("Ed25519")
+    return jwk
+
+
+def ed_private(jwk: WrapJWK):
+    return OKPKey.import_key(key_part(jwk, "private"))
+
+
+def test_ed25519_token(ed_keys):
+    jwt = WrapJWT(ed_keys, issuer=ISS, audience=AUD)
+    token = jwt.create({"sub": "1"}, exp=60)
+
+    assert jwt.decode(token).header["alg"] == "Ed25519"
+    assert jwt.verify(token)
+
+
+@pytest.mark.filterwarnings("ignore:EdDSA is deprecated")
+def test_eddsa_identifier_is_rejected(ed_keys):
+    """Only the fully specified 'Ed25519' (RFC 9864), not 'EdDSA'"""
+    token = joserfc_jwt.encode(
+        {"alg": "EdDSA", "kid": last_kid(ed_keys)},
+        claims(),
+        ed_private(ed_keys),
+        algorithms=["EdDSA"],
+    )
+
+    with pytest.raises(InvalidTokenError):
+        WrapJWT(ed_keys, issuer=ISS, audience=AUD).verify(token)
+
+
+def test_es256_header_with_ed25519_key(ed_keys):
+    """The header cannot choose another algorithm than the key has"""
+    signed = joserfc_jwt.encode(
+        {"alg": "Ed25519", "kid": last_kid(ed_keys)},
+        claims(),
+        ed_private(ed_keys),
+        algorithms=["Ed25519"],
+    )
+    forged = f"{b64json({'alg': 'ES256', 'kid': last_kid(ed_keys)})}." + (
+        signed.split(".", 1)[1]
+    )
+
+    with pytest.raises(InvalidTokenError):
+        WrapJWT(ed_keys, issuer=ISS, audience=AUD).verify(forged)
+
+
+def test_ed25519_header_with_es256_key(keys, verifier):
+    """A token signed by an attacker's Ed25519 key with kid of an ES256 key"""
+    attacker = OKPKey.generate_key("Ed25519")
+    token = joserfc_jwt.encode(
+        {"alg": "Ed25519", "kid": last_kid(keys)},
+        claims(),
+        attacker,
+        algorithms=["Ed25519"],
+    )
+
+    with pytest.raises(InvalidTokenError):
+        verifier.verify(token)
+
+
+def test_hs256_with_ed25519_public_key(ed_keys):
+    secret = OctKey.import_key(json.dumps(key_part(ed_keys, "public")).encode())
+    token = joserfc_jwt.encode(
+        {"alg": "HS256", "kid": last_kid(ed_keys)},
+        claims(),
+        secret,
+        algorithms=["HS256"],
+    )
+
+    with pytest.raises(InvalidTokenError):
+        WrapJWT(ed_keys, issuer=ISS, audience=AUD).verify(token)
+
+
+def test_verify_requires_sub(keys, verifier):
+    """sub is required by verify since 1.0.0"""
+    without = {k: v for k, v in claims().items() if k != "sub"}
+
+    with pytest.raises(TokenClaimError, match="sub"):
+        verifier.verify(sign(keys, header(keys), b64json(without)))
+    with pytest.raises(TokenClaimError):
+        verifier.verify(sign(keys, header(keys), b64json(claims(sub=""))))

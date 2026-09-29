@@ -25,7 +25,9 @@ from joserfc_wrapper import (
 from joserfc_wrapper.cli.gen_jwt import GenerateJWT
 from joserfc_wrapper.testing import check_read_only_storage
 
-from .test_jwk import LegacyStorage
+from .conftest import key_part, last_kid
+
+from .test_jwk import MinimalStorage
 
 ISS, AUD = "https://example.com", "api"
 URL = "https://auth.example.com/.well-known/jwks.json"
@@ -58,6 +60,7 @@ def session_for(*documents: Any) -> MagicMock:
         else:
             response = MagicMock()
             response.json.return_value = document
+            response.url = URL
             responses.append(response)
     session.get.side_effect = responses
     return session
@@ -67,7 +70,7 @@ def session_for(*documents: Any) -> MagicMock:
 
 
 def test_verify_uses_cache(storage, jwk):
-    token = jwt_for(jwk).create({"uid": 1}, exp=60)
+    token = jwt_for(jwk).create({"sub": "1"}, exp=60)
 
     with patch.object(storage, "load_keys", wraps=storage.load_keys) as load:
         for _ in range(3):
@@ -79,7 +82,7 @@ def test_verify_uses_cache(storage, jwk):
 
 def test_cache_disabled(tmp_path, jwk):
     storage = StorageFile(str(tmp_path), key_cache_ttl=0)
-    token = jwt_for(jwk).create({"uid": 1}, exp=60)
+    token = jwt_for(jwk).create({"sub": "1"}, exp=60)
 
     with patch.object(storage, "load_keys", wraps=storage.load_keys) as load:
         for _ in range(3):
@@ -89,7 +92,7 @@ def test_cache_disabled(tmp_path, jwk):
 
 
 def test_cache_expires(storage, jwk):
-    token = jwt_for(jwk).create({"uid": 1}, exp=60)
+    token = jwt_for(jwk).create({"sub": "1"}, exp=60)
     jwt_for(jwk).verify(token)
 
     with patch.object(storage, "load_keys", wraps=storage.load_keys) as load:
@@ -100,10 +103,10 @@ def test_cache_expires(storage, jwk):
 
 
 def test_revoke_clears_cache_of_the_process(storage, jwk):
-    token = jwt_for(jwk).create({"uid": 1}, exp=60)
+    token = jwt_for(jwk).create({"sub": "1"}, exp=60)
     jwt_for(jwk).verify(token)
 
-    WrapJWK(storage).revoke(jwk.get_kid())
+    WrapJWK(storage).revoke(last_kid(jwk))
 
     with pytest.raises(TokenKeyRevokedError):
         jwt_for(jwk).verify(token)
@@ -111,11 +114,11 @@ def test_revoke_clears_cache_of_the_process(storage, jwk):
 
 def test_revoke_by_other_process_after_ttl(tmp_path, jwk):
     """Another storage object (process) sees the revocation after TTL"""
-    token = jwt_for(jwk).create({"uid": 1}, exp=60)
+    token = jwt_for(jwk).create({"sub": "1"}, exp=60)
     verifier = WrapJWK(StorageFile(str(tmp_path), key_cache_ttl=60))
     jwt_for(verifier).verify(token)
 
-    jwk.revoke(jwk.get_kid())
+    jwk.revoke(last_kid(jwk))
 
     assert jwt_for(verifier).verify(token)
     with later(61):
@@ -125,13 +128,13 @@ def test_revoke_by_other_process_after_ttl(tmp_path, jwk):
 
 def test_verify_does_not_load_private_keys(storage, jwk):
     """decode changes no loaded keys of WrapJWK"""
-    first = jwk.get_kid()
-    token = jwt_for(jwk).create({"uid": 1}, exp=60)
+    first = last_kid(jwk)
+    token = jwt_for(jwk).create({"sub": "1"}, exp=60)
     jwk.rotate()
-    last = jwk.get_kid()
+    last = last_kid(jwk)
 
     assert jwt_for(jwk).verify(token).header["kid"] == first
-    assert jwk.get_kid() == last
+    assert last_kid(jwk) == last
 
 
 @pytest.mark.parametrize("ttl", [-1, "300", True])
@@ -141,14 +144,14 @@ def test_invalid_cache_ttl(tmp_path, ttl):
 
 
 def test_cache_threads(storage, jwk):
-    tokens = [jwt_for(jwk).create({"uid": i}, exp=60) for i in range(20)]
+    tokens = [jwt_for(jwk).create({"sub": str(i)}, exp=60) for i in range(20)]
 
-    def verify(token: str) -> int:
-        return jwt_for(WrapJWK(storage)).verify(token).claims["uid"]
+    def verify(token: str) -> str:
+        return jwt_for(WrapJWK(storage)).verify(token).claims["sub"]
 
     with ThreadPoolExecutor(8) as pool:
         assert sorted(pool.map(verify, tokens * 5)) == sorted(
-            list(range(20)) * 5
+            [str(i) for i in range(20)] * 5
         )
 
 
@@ -156,15 +159,15 @@ def test_cache_threads(storage, jwk):
 
 
 def test_jwks(storage, jwk):
-    first = jwk.get_kid()
+    first = last_kid(jwk)
     jwk.rotate()
-    second = jwk.get_kid()
+    second = last_kid(jwk)
     jwk.rotate()
     jwk.revoke(second)
 
     keys = {key["kid"]: key for key in jwk.jwks()["keys"]}
 
-    assert first in keys and jwk.get_kid() in keys
+    assert first in keys and last_kid(jwk) in keys
     assert second not in keys, "revoked keys are not published"
     for key in keys.values():
         assert set(key) == {"kid", "kty", "crv", "x", "y", "use", "alg"}
@@ -178,7 +181,7 @@ def test_jwks_new_keys_immediately(storage, jwk):
     other = WrapJWK(StorageFile(storage_dir(storage)))
     other.rotate()
 
-    assert other.get_kid() in {key["kid"] for key in jwk.jwks()["keys"]}
+    assert last_kid(other) in {key["kid"] for key in jwk.jwks()["keys"]}
 
 
 def storage_dir(storage: StorageFile) -> str:
@@ -186,9 +189,8 @@ def storage_dir(storage: StorageFile) -> str:
 
 
 def test_jwks_storage_without_listing():
-    jwk = WrapJWK(LegacyStorage())
-    jwk.generate_keys()
-    jwk.save_keys()
+    jwk = WrapJWK(MinimalStorage())
+    jwk.rotate()
 
     with pytest.raises(KeysLoadError, match="does not support listing"):
         jwk.jwks()
@@ -198,17 +200,17 @@ def test_jwks_storage_without_listing():
 
 
 def test_storage_jwks_from_file(issuer, tmp_path):
-    token = jwt_for(issuer).create({"uid": 1}, exp=60)
+    token = jwt_for(issuer).create({"sub": "1"}, exp=60)
     path = tmp_path / "jwks.json"
     path.write_text(json.dumps(issuer.jwks()))
 
     for source in (str(path), f"file://{path}"):
         verifier = WrapJWK(StorageJWKS(source))
-        assert jwt_for(verifier).verify(token).claims["uid"] == 1
+        assert jwt_for(verifier).verify(token).claims["sub"] == "1"
 
 
 def test_storage_jwks_from_url(issuer):
-    token = jwt_for(issuer).create({"uid": 1}, exp=60)
+    token = jwt_for(issuer).create({"sub": "1"}, exp=60)
     session = session_for(issuer.jwks())
     storage = StorageJWKS(URL, session=session, timeout=3)
 
@@ -221,13 +223,13 @@ def test_storage_jwks_from_url(issuer):
 def test_storage_jwks_contract(issuer):
     storage = StorageJWKS(URL, session=session_for(issuer.jwks()))
 
-    check_read_only_storage(storage, issuer.get_kid())
+    check_read_only_storage(storage, last_kid(issuer))
 
 
 def test_storage_jwks_unknown_kid_refresh(issuer):
     old = issuer.jwks()
     issuer.rotate()
-    token = jwt_for(issuer).create({"uid": 1}, exp=60)
+    token = jwt_for(issuer).create({"sub": "1"}, exp=60)
     session = session_for(old, issuer.jwks())
     storage = StorageJWKS(URL, session=session, refresh_interval=60)
     storage.load_jwks()
@@ -262,7 +264,7 @@ def test_storage_jwks_ttl_refresh(issuer):
     first = issuer.jwks()
     session = session_for(first, first)
     storage = StorageJWKS(URL, session=session, ttl=300)
-    token = jwt_for(issuer).create({"uid": 1}, exp=60)
+    token = jwt_for(issuer).create({"sub": "1"}, exp=60)
     jwt_for(WrapJWK(storage)).verify(token)
 
     with later(301):
@@ -273,9 +275,9 @@ def test_storage_jwks_ttl_refresh(issuer):
 
 def test_storage_jwks_revoked_key(issuer):
     """A revoked key disappears from the JWKS after the next download"""
-    token = jwt_for(issuer).create({"uid": 1}, exp=60)
+    token = jwt_for(issuer).create({"sub": "1"}, exp=60)
     before = issuer.jwks()
-    issuer.revoke(issuer.get_kid())
+    issuer.revoke(last_kid(issuer))
     session = session_for(before, issuer.jwks())
     storage = StorageJWKS(URL, session=session, ttl=300)
     assert jwt_for(WrapJWK(storage)).verify(token)
@@ -286,7 +288,7 @@ def test_storage_jwks_revoked_key(issuer):
 
 
 def test_storage_jwks_source_down_uses_stale(issuer):
-    token = jwt_for(issuer).create({"uid": 1}, exp=60)
+    token = jwt_for(issuer).create({"sub": "1"}, exp=60)
     down = OSError("connection refused")
     session = session_for(issuer.jwks(), down, down)
     storage = StorageJWKS(URL, session=session, ttl=300, max_stale=3600)
@@ -302,7 +304,7 @@ def test_storage_jwks_source_down_uses_stale(issuer):
 
 
 def test_storage_jwks_first_download_fails(issuer):
-    token = jwt_for(issuer).create({"uid": 1}, exp=60)
+    token = jwt_for(issuer).create({"sub": "1"}, exp=60)
     session = session_for(OSError("down"), issuer.jwks())
     storage = StorageJWKS(URL, session=session)
 
@@ -318,7 +320,7 @@ def test_storage_jwks_http_status_error(issuer):
     response.raise_for_status.side_effect = OSError("503 Server Error")
     session = MagicMock()
     session.get.return_value = response
-    token = jwt_for(issuer).create({"uid": 1}, exp=60)
+    token = jwt_for(issuer).create({"sub": "1"}, exp=60)
 
     with pytest.raises(KeysLoadError, match="503"):
         jwt_for(WrapJWK(StorageJWKS(URL, session=session))).verify(token)
@@ -337,7 +339,7 @@ def test_storage_jwks_http_status_error(issuer):
     ],
 )
 def test_storage_jwks_invalid_document(issuer, document, error):
-    token = jwt_for(issuer).create({"uid": 1}, exp=60)
+    token = jwt_for(issuer).create({"sub": "1"}, exp=60)
     storage = StorageJWKS(URL, session=session_for(document))
 
     with pytest.raises(KeysLoadError, match=error):
@@ -345,8 +347,8 @@ def test_storage_jwks_invalid_document(issuer, document, error):
 
 
 def test_storage_jwks_refuses_private_key(issuer):
-    key = {**issuer.get_private_key(), "kid": issuer.get_kid()}
-    token = jwt_for(issuer).create({"uid": 1}, exp=60)
+    key = {**key_part(issuer, "private"), "kid": last_kid(issuer)}
+    token = jwt_for(issuer).create({"sub": "1"}, exp=60)
     storage = StorageJWKS(URL, session=session_for({"keys": [key]}))
 
     with pytest.raises(KeysLoadError, match="private key"):
@@ -396,7 +398,7 @@ def test_storage_jwks_is_read_only(issuer):
     jwk = WrapJWK(storage)
 
     with pytest.raises(KeysLoadError, match="only verify tokens"):
-        jwt_for(jwk).create({"uid": 1}, exp=60)
+        jwt_for(jwk).create({"sub": "1"}, exp=60)
     with pytest.raises(KeysLoadError, match="only verify tokens"):
         jwk.rotate()
     with pytest.raises(ConfigurationError, match="does not support"):

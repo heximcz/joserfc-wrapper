@@ -1,38 +1,76 @@
-import uuid
+"""WrapJWK without state (1.0.0)"""
+
+import copy
+import json
+import threading
+import time
+from unittest.mock import patch
 
 import pytest
 
 from joserfc_wrapper import (
     AbstractKeyStorage,
+    ConfigurationError,
     KeysLoadError,
-    KeysNotLoadedError,
+    KeysNotFoundError,
     KeysSaveError,
     ObjectTypeError,
     WrapJWK,
     WrapJWT,
 )
 from joserfc_wrapper.testing import check_storage
+from joserfc_wrapper.wrap_jwk import generate_keys
+
+from .conftest import key_part, key_record, last_kid
+
+DAY = 86400
 
 
-class LegacyStorage(AbstractKeyStorage):
-    """Custom storage implementing only the methods of version 0.2"""
+class MinimalStorage(AbstractKeyStorage):
+    """
+    The smallest custom storage: only the required methods (in memory),
+    without listing keys and without token revocation
+    """
+
+    not_found_errors = (KeyError,)
 
     def __init__(self) -> None:
         self.data: dict = {}
+        self.lock = threading.Lock()
 
     def get_last_kid(self) -> str:
         return self.data["last-key-id"]["kid"]
 
     def load_keys(self, kid: str = "") -> tuple[str, dict]:
         kid = kid or self.get_last_kid()
-        return kid, {"data": self.data[kid]}
+        return kid, {"data": copy.deepcopy(self.data[kid])}
 
     def save_keys(self, kid: str, keys: dict) -> None:
-        self.data[kid] = keys
-        self._save_last_id(kid)
+        with self.lock:
+            self.data[kid] = copy.deepcopy(keys)
+            self.data["last-key-id"] = {"kid": kid}
 
-    def _save_last_id(self, kid: str) -> None:
-        self.data["last-key-id"] = {"kid": kid}
+    def save_last_kid(self, kid: str) -> None:
+        with self.lock:
+            self.data["last-key-id"] = {"kid": kid}
+
+    def replace_last_keys(self, last_kid: str, kid: str, keys: dict) -> str:
+        with self.lock:
+            current = self.data.get("last-key-id", {}).get("kid")
+            if current != last_kid:
+                return current
+            self.data[kid] = copy.deepcopy(keys)
+            self.data["last-key-id"] = {"kid": kid}
+            return kid
+
+    def update_metadata(self, kid: str, metadata: dict) -> None:
+        with self.lock:
+            self.data[kid].update(metadata)
+
+
+def later(seconds: int):
+    """Patch the current time"""
+    return patch("time.time", return_value=time.time() + seconds)
 
 
 def test_requires_key_storage():
@@ -40,113 +78,15 @@ def test_requires_key_storage():
         WrapJWK(object())  # type: ignore[arg-type]
 
 
-def test_generate_keys(storage):
-    jwk = WrapJWK(storage)
-    jwk.generate_keys()
-
-    assert uuid.UUID(jwk.get_kid()).version == 4
-    assert jwk.get_kid() == jwk.get_kid().lower()
-    assert jwk.get_private_key()["crv"] == "P-256"
-    assert "d" in jwk.get_private_key()
-    assert "d" not in jwk.get_public_key()
-    assert jwk.get_secret_key()["kty"] == "oct"
-    assert jwk.get_counter() == 0
+def test_storage_property(storage):
+    assert WrapJWK(storage).storage is storage
 
 
-def test_generate_new_kid(storage):
-    jwk = WrapJWK(storage)
-    jwk.generate_keys()
-    first = jwk.get_kid()
-    jwk.generate_keys()
-
-    assert jwk.get_kid() != first
+def test_minimal_storage():
+    check_storage(MinimalStorage())
 
 
-def test_save_and_load(jwk, storage):
-    jwk.increase_counter()
-    jwk.save_keys()
-
-    loaded = WrapJWK(storage)
-    loaded.load_keys()
-
-    assert loaded.get_kid() == jwk.get_kid()
-    assert loaded.get_private_key() == jwk.get_private_key()
-    assert loaded.get_public_key() == jwk.get_public_key()
-    assert loaded.get_secret_key() == jwk.get_secret_key()
-    assert loaded.get_counter() == 1
-
-
-def test_load_by_kid(jwk, storage):
-    first = jwk.get_kid()
-    jwk.generate_keys()
-    jwk.save_keys()
-
-    loaded = WrapJWK(storage)
-    loaded.load_keys(first)
-
-    assert loaded.get_kid() == first
-
-
-def test_reserve_key(jwk, storage):
-    jwk.reserve_key()
-    jwk.reserve_key()
-
-    assert jwk.get_counter() == 2
-    assert storage.load_keys()[1]["data"]["counter"] == 2
-
-
-def test_reserve_key_rotates(jwk, storage):
-    first = jwk.get_kid()
-    for _ in range(3):
-        jwk.reserve_key(payload=2)
-
-    assert jwk.get_kid() != first
-    assert storage.get_last_kid() == jwk.get_kid()
-    assert storage.load_keys(first)[1]["data"]["counter"] == 2
-    assert jwk.get_counter() == 1
-
-
-def test_reserve_key_uses_keys_rotated_by_other_process(jwk, storage):
-    first = jwk.get_kid()
-    for _ in range(2):
-        jwk.reserve_key(payload=2)
-    other = WrapJWK(storage)
-    other.reserve_key(payload=2)  # rotates
-    # jwk still has the first keys loaded, reserve_key loads the last keys
-    jwk.reserve_key(payload=2)
-
-    assert jwk.get_kid() == other.get_kid() != first
-    assert jwk.get_counter() == 2
-
-
-def test_reserve_key_gives_up(jwk, storage, monkeypatch):
-    monkeypatch.setattr(type(storage), "increase_counter", lambda *a, **k: None)
-
-    with pytest.raises(KeysSaveError):
-        jwk.reserve_key(payload=1)
-
-
-@pytest.mark.filterwarnings("ignore:.payload. is deprecated:DeprecationWarning")
-class NewStyleStorage(LegacyStorage):
-    """Custom storage of 0.8.0: save_last_kid instead of _save_last_id"""
-
-    def save_keys(self, kid: str, keys: dict) -> None:
-        self.data[kid] = keys
-        self.save_last_kid(kid)
-
-    def save_last_kid(self, kid: str) -> None:
-        self.data["last-key-id"] = {"kid": kid}
-
-
-def test_new_style_storage():
-    storage = NewStyleStorage()
-    check_storage(storage, atomic=False)
-    # the deprecated method still works for old callers
-    storage._save_last_id("abc")  # pylint: disable=protected-access
-    assert storage.get_last_kid() == "abc"
-
-
-def test_storage_without_save_last_kid():
+def test_storage_without_required_methods():
     class Incomplete(AbstractKeyStorage):
         def get_last_kid(self) -> str:
             return ""
@@ -155,106 +95,228 @@ def test_storage_without_save_last_kid():
             return kid, {}
 
         def save_keys(self, kid: str, keys: dict) -> None:
-            self.save_last_kid(kid)
+            pass
 
-    with pytest.raises(NotImplementedError, match="save_last_kid"):
-        Incomplete().save_keys("kid", {})
-    with pytest.raises(NotImplementedError, match="save_last_kid"):
-        Incomplete()._save_last_id("kid")  # pylint: disable=protected-access
+        def save_last_kid(self, kid: str) -> None:
+            pass
 
-
-@pytest.mark.filterwarnings("ignore:.payload. is deprecated:DeprecationWarning")
-def test_legacy_storage(claims):
-    storage = LegacyStorage()
-    jwk = WrapJWK(storage)
-    jwk.generate_keys()
-    jwk.save_keys()
-    first = jwk.get_kid()
-    jwt = WrapJWT(jwk)
-
-    tokens = [jwt.create(dict(claims), payload=2) for _ in range(3)]
-
-    assert storage.data[first]["counter"] == 2
-    assert storage.get_last_kid() != first
-    assert jwt.decode(tokens[0]).claims["uid"] == claims["uid"]
+    # replace_last_keys and update_metadata are required since 1.0.0
+    with pytest.raises(TypeError, match="replace_last_keys"):
+        Incomplete()  # type: ignore[abstract]
 
 
-def test_legacy_storage_counter_keeps_last_kid():
-    storage = LegacyStorage()
-    jwk = WrapJWK(storage)
-    jwk.generate_keys()
-    jwk.save_keys()
-    first = jwk.get_kid()
-    jwk.generate_keys()
-    jwk.save_keys()
-
-    assert storage.increase_counter(first) == 1
-    assert storage.get_last_kid() == jwk.get_kid()
+# generate_keys and rotate
 
 
 @pytest.mark.parametrize(
-    "method",
-    [
-        "get_kid",
-        "get_public_key",
-        "get_private_key",
-        "get_secret_key",
-        "get_counter",
-        "increase_counter",
-        "save_keys",
-    ],
+    "algorithm, kty, crv",
+    [("ES256", "EC", "P-256"), ("Ed25519", "OKP", "Ed25519")],
 )
-def test_keys_not_loaded(storage, method):
-    with pytest.raises(KeysNotLoadedError):
-        getattr(WrapJWK(storage), method)()
+def test_generate_keys(algorithm, kty, crv):
+    kid, record = generate_keys(algorithm)
+
+    assert set(record) == {"keys", "created"}, "no counter since 1.0.0"
+    assert set(record["keys"]) == {"private", "public", "secret"}
+    public = record["keys"]["public"]
+    assert (public["kty"], public["crv"]) == (kty, crv)
+    assert "d" in record["keys"]["private"] and "d" not in public
+    assert record["keys"]["secret"]["kty"] == "oct"
+    assert abs(record["created"] - time.time()) <= 2
+    assert len(kid) == 43
 
 
-def test_load_missing_keys(storage):
-    with pytest.raises(KeysLoadError) as exc:
-        WrapJWK(storage).load_keys()
-
-    assert isinstance(exc.value.__cause__, FileNotFoundError)
+def test_generate_new_kid():
+    assert generate_keys()[0] != generate_keys()[0]
 
 
-def test_load_unknown_kid(jwk, storage):
+def test_rotate_creates_first_keys(storage):
+    kid = WrapJWK(storage).rotate()
+
+    assert storage.get_last_kid() == kid
+
+
+def test_rotate_retires_previous_keys(jwk, storage):
+    first = last_kid(jwk)
+
+    second = jwk.rotate()
+
+    assert storage.get_last_kid() == second != first
+    assert key_record(jwk, first)["retired"] == key_record(jwk)["created"]
+
+
+def test_rotate_ed25519(jwk):
+    kid = jwk.rotate("Ed25519")
+
+    assert key_part(jwk, "public", kid)["kty"] == "OKP"
+
+
+@pytest.mark.parametrize("algorithm", ["RS256", "EdDSA", "HS256", ""])
+def test_unsupported_algorithm(jwk, algorithm):
+    with pytest.raises(ConfigurationError, match="Unsupported algorithm"):
+        jwk.rotate(algorithm)
+    with pytest.raises(ConfigurationError):
+        WrapJWT(jwk, key_algorithm=algorithm)
+
+
+def test_rotate_keeps_keys_of_concurrent_rotation(jwk, storage):
+    """Another process rotated the keys in the meantime"""
+    other = generate_keys()
+    original = storage.replace_last_keys
+
+    def concurrent(last_kid: str, kid: str, keys: dict) -> str:
+        storage.save_keys(*other)
+        return original(last_kid, kid, keys)
+
+    with patch.object(storage, "replace_last_keys", side_effect=concurrent):
+        assert jwk.rotate() == other[0]
+    assert storage.get_last_kid() == other[0]
+
+
+def test_rotate_save_error(jwk, storage):
+    with patch.object(storage, "replace_last_keys", side_effect=OSError("x")):
+        with pytest.raises(KeysSaveError, match="OSError"):
+            jwk.rotate()
+
+
+# reserve_signing_key
+
+
+def test_reserve_signing_key(jwk):
+    kid, private = jwk.reserve_signing_key()
+
+    assert kid == last_kid(jwk)
+    assert private == key_part(jwk, "private")
+
+
+def test_reserve_signing_key_without_keys(storage):
+    with pytest.raises(KeysNotFoundError):
+        WrapJWK(storage).reserve_signing_key()
+
+
+def test_reserve_signing_key_rotates_old_keys(jwk):
+    first = last_kid(jwk)
+
+    assert jwk.reserve_signing_key(max_key_age=DAY)[0] == first
+    with later(DAY + 1):
+        kid, _ = jwk.reserve_signing_key(max_key_age=DAY, algorithm="Ed25519")
+    assert kid != first and kid == last_kid(jwk)
+    assert key_part(jwk, "public", kid)["kty"] == "OKP"
+
+
+def test_reserve_signing_key_rotates_revoked_keys(jwk, storage):
+    first = last_kid(jwk)
+    storage.update_metadata(first, {"revoked": int(time.time())})
+
+    assert jwk.reserve_signing_key()[0] != first
+
+
+def test_keys_without_created_rotate_once(jwk, storage, tmp_path):
+    """Keys of versions older than 0.5.0 have no creation time"""
+    first = last_kid(jwk)
+    path = tmp_path / f"{first}.json"
+    record = json.loads(path.read_text())
+    del record["data"]["created"]
+    path.write_text(json.dumps(record))
+
+    second = jwk.reserve_signing_key(max_key_age=DAY)[0]
+
+    assert second != first
+    assert jwk.reserve_signing_key(max_key_age=DAY)[0] == second
+
+
+def test_reserve_signing_key_gives_up(jwk, storage):
+    """Other processes revoke every new key"""
+    original = storage.load_keys
+
+    def always_revoked(kid: str = "") -> tuple[str, dict]:
+        loaded_kid, result = original(kid)
+        result["data"]["revoked"] = 1
+        return loaded_kid, result
+
+    with patch.object(storage, "load_keys", side_effect=always_revoked):
+        with pytest.raises(KeysSaveError, match="too many rotations"):
+            jwk.reserve_signing_key()
+
+
+def test_reserve_signing_key_storage_error(jwk, storage):
+    with patch.object(storage, "load_keys", side_effect=OSError("down")):
+        with pytest.raises(KeysLoadError, match="OSError"):
+            jwk.reserve_signing_key()
+
+
+def test_incomplete_keys_in_storage(jwk, tmp_path):
+    path = tmp_path / f"{last_kid(jwk)}.json"
+    path.write_text(json.dumps({"data": {"created": 1}}))
+
     with pytest.raises(KeysLoadError):
-        WrapJWK(storage).load_keys(uuid.uuid4().hex)
-
-
-def test_failed_load_keeps_loaded_keys(jwk):
-    kid = jwk.get_kid()
+        jwk.reserve_signing_key()
     with pytest.raises(KeysLoadError):
-        jwk.load_keys(uuid.uuid4().hex)
-
-    assert jwk.get_kid() == kid
+        jwk.load_secret_key()
 
 
-def test_save_error(jwk, storage, monkeypatch):
-    def broken(*args, **kwargs):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(type(storage), "save_keys", broken)
-
-    with pytest.raises(KeysSaveError, match="OSError: disk full") as exc:
-        jwk.save_keys()
-    assert isinstance(exc.value.__cause__, OSError)
+# revoke
 
 
-def test_reserve_key_storage_error(jwk, storage, monkeypatch):
-    def broken(*args, **kwargs):
-        raise OSError("disk full")
+def test_revoke_keeps_algorithm_of_revoked_keys(jwk):
+    kid = jwk.rotate("Ed25519")
 
-    monkeypatch.setattr(type(storage), "increase_counter", broken)
+    jwk.revoke(kid)
 
-    with pytest.raises(KeysSaveError):
-        jwk.reserve_key()
+    assert key_part(jwk, "public")["kty"] == "OKP"
+    assert key_record(jwk, kid)["revoked"] is not None
 
 
-def test_incomplete_keys_in_storage(jwk, storage, tmp_path):
-    kid = jwk.get_kid()
-    broken = uuid.uuid4().hex
-    (tmp_path / f"{broken}.json").write_text('{"data": {"counter": 0}}')
+def test_revoke_with_other_algorithm(jwk):
+    kid = last_kid(jwk)
 
-    with pytest.raises(KeysLoadError, match="KeyError"):
-        jwk.load_keys(broken)
-    assert jwk.get_kid() == kid
+    jwk.revoke(kid, algorithm="Ed25519")
+
+    assert key_part(jwk, "public")["kty"] == "OKP"
+
+
+def test_revoke_unknown_keys(jwk):
+    with pytest.raises(KeysNotFoundError):
+        jwk.revoke(generate_keys()[0])
+
+
+# loading keys
+
+
+def test_load_verification_key(jwk):
+    public, revoked = jwk.load_verification_key(last_kid(jwk))
+
+    assert public == key_part(jwk, "public") and revoked is None
+
+
+def test_load_unknown_keys(jwk):
+    with pytest.raises(KeysNotFoundError):
+        jwk.load_verification_key(generate_keys()[0])
+    with pytest.raises(KeysNotFoundError):
+        jwk.load_secret_key(generate_keys()[0])
+
+
+def test_load_secret_key(jwk):
+    kid, secret = jwk.load_secret_key()
+
+    assert kid == last_kid(jwk)
+    assert secret == key_part(jwk, "secret")
+
+
+def test_list_keys_without_listing():
+    jwk = WrapJWK(MinimalStorage())
+    jwk.rotate()
+
+    with pytest.raises(KeysLoadError, match="does not support listing"):
+        jwk.list_keys()
+
+
+def test_list_keys(jwk):
+    first = last_kid(jwk)
+    second = jwk.rotate("Ed25519")
+
+    keys = jwk.list_keys()
+
+    assert [k["kid"] for k in keys] == [first, second]
+    assert [k["algorithm"] for k in keys] == ["ES256", "Ed25519"]
+    assert keys[1]["last"] and not keys[0]["last"]
+    assert all("private" not in k and "counter" not in k for k in keys)

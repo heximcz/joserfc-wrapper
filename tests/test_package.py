@@ -1,5 +1,7 @@
 import importlib
 import inspect
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -28,78 +30,40 @@ def test_py_typed_marker():
     assert (Path(joserfc_wrapper.__file__).parent / "py.typed").is_file()
 
 
-OLD_NAMES = [
-    ("joserfc_wrapper.WrapJWT", "WrapJWT", "joserfc_wrapper.wrap_jwt"),
-    ("joserfc_wrapper.WrapJWK", "WrapJWK", "joserfc_wrapper.wrap_jwk"),
-    ("joserfc_wrapper.WrapJWE", "WrapJWE", "joserfc_wrapper.wrap_jwe"),
-    (
-        "joserfc_wrapper.StorageFile",
-        "StorageFile",
-        "joserfc_wrapper.storage_file",
-    ),
-    (
-        "joserfc_wrapper.StorageVault",
-        "StorageVault",
-        "joserfc_wrapper.storage_vault",
-    ),
-    (
-        "joserfc_wrapper.StorageRedis",
-        "StorageRedis",
-        "joserfc_wrapper.storage_redis",
-    ),
-    (
-        "joserfc_wrapper.StorageJWKS",
-        "StorageJWKS",
-        "joserfc_wrapper.storage_jwks",
-    ),
-    (
-        "joserfc_wrapper.AbstractKeyStorage",
-        "AbstractKeyStorage",
-        "joserfc_wrapper.abstract_key_storage",
-    ),
-    (
+@pytest.mark.parametrize(
+    "module",
+    [
+        "joserfc_wrapper.WrapJWT",
         "joserfc_wrapper.Exceptions",
-        "KeysLoadError",
-        "joserfc_wrapper.exceptions",
-    ),
-    ("joserfc_wrapper.TokenHeader", "read_kid", "joserfc_wrapper.token_header"),
-    (
+        "joserfc_wrapper.TokenHeader",
         "joserfc_wrapper.cli.GenJWT",
-        "GenerateJWT",
-        "joserfc_wrapper.cli.gen_jwt",
-    ),
-]
+        "joserfc_wrapper.cli.upgrade_check",
+    ],
+)
+def test_old_module_names_are_removed(module):
+    """The module names of 0.x were removed in 1.0.0"""
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(module)
 
 
-@pytest.mark.parametrize("old, name, new", OLD_NAMES)
-def test_old_module_names(old, name, new):
-    """Module names of versions older than 0.8.0 still work (deprecated)"""
-    module = importlib.import_module(old)
-
-    with pytest.warns(DeprecationWarning, match=f"use {new}"):
-        value = getattr(module, name)
-    assert value is getattr(importlib.import_module(new), name)
-
-
-def test_old_module_does_not_replace_exports():
-    importlib.import_module("joserfc_wrapper.WrapJWT")
-
-    assert isinstance(joserfc_wrapper.WrapJWT, type)
+def test_removed_names():
+    for name in ("CreateTokenException", "Exceptions"):
+        assert not hasattr(joserfc_wrapper, name)
+    assert not hasattr(joserfc_wrapper.WrapJWT, "validate")
+    assert not hasattr(joserfc_wrapper.WrapJWT, "get_kid")
+    for name in ("load_keys", "generate_keys", "save_keys", "get_kid"):
+        assert not hasattr(joserfc_wrapper.WrapJWK, name)
+    assert not hasattr(joserfc_wrapper.AbstractKeyStorage, "increase_counter")
+    assert not hasattr(joserfc_wrapper.AbstractKeyStorage, "_save_last_id")
 
 
-def test_old_module_package_attributes():
-    from joserfc_wrapper import cli  # pylint: disable=import-outside-toplevel
+def test_package_import_does_not_need_hvac_or_redis():
+    code = (
+        "import sys, joserfc_wrapper; "
+        "print('hvac' in sys.modules, 'redis' in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
 
-    assert joserfc_wrapper.Exceptions.__name__ == "joserfc_wrapper.Exceptions"
-    assert cli.GenJWT.__name__ == "joserfc_wrapper.cli.GenJWT"
-    with pytest.raises(AttributeError):
-        getattr(joserfc_wrapper, "Missing")
-
-
-def test_create_token_exception_alias():
-    with pytest.warns(DeprecationWarning, match="use CreateTokenError"):
-        old = joserfc_wrapper.CreateTokenException
-    assert old is joserfc_wrapper.CreateTokenError
-    with pytest.warns(DeprecationWarning):
-        assert exceptions.CreateTokenException is exceptions.CreateTokenError
-    assert "CreateTokenException" not in joserfc_wrapper.__all__
+    assert result.stdout.split() == ["False", "False"]

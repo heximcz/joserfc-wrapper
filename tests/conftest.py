@@ -8,7 +8,6 @@ CLAIMS = {
     "iss": "https://example.com",
     "aud": "auditor",
     "sub": "123",
-    "uid": 123,
 }
 
 
@@ -24,11 +23,16 @@ def storage(tmp_path) -> StorageFile:
 
 @pytest.fixture
 def jwk(storage: StorageFile) -> WrapJWK:
-    """WrapJWK with generated and saved keys"""
+    """WrapJWK with the first keys in the storage"""
     wrapjwk = WrapJWK(storage)
-    wrapjwk.generate_keys()
-    wrapjwk.save_keys()
+    wrapjwk.rotate()
     return wrapjwk
+
+
+@pytest.fixture
+def kid(storage: StorageFile, jwk: WrapJWK) -> str:
+    """Key ID of the last keys"""
+    return storage.get_last_kid()
 
 
 @pytest.fixture
@@ -52,3 +56,18 @@ def redis_url() -> str | None:
 def redis_cluster_url() -> str | None:
     """Redis Cluster connection (docker dev environment)"""
     return os.environ.get("REDIS_CLUSTER_URL") or None
+
+
+def last_kid(jwk: WrapJWK) -> str:
+    """Key ID of the last keys in the storage of jwk"""
+    return jwk.storage.get_last_kid()
+
+
+def key_record(jwk: WrapJWK, kid: str = "") -> dict:
+    """The key record (the 'data' part), default the last keys"""
+    return jwk.storage.load_keys(kid)[1]["data"]
+
+
+def key_part(jwk: WrapJWK, part: str, kid: str = "") -> dict:
+    """private, public or secret key (JWK dict), default the last keys"""
+    return key_record(jwk, kid)["keys"][part]

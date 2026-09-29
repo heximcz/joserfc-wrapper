@@ -9,7 +9,11 @@ from joserfc_wrapper.abstract_key_storage import (
     AbstractKeyStorage,
     KEY_CACHE_TTL,
 )
-from joserfc_wrapper.token_header import is_valid_kid, jti_digest
+from joserfc_wrapper.token_header import (
+    is_valid_kid,
+    jti_digest,
+    require_valid_kid,
+)
 
 try:
     import fcntl
@@ -53,27 +57,18 @@ class StorageFile(AbstractKeyStorage):
         """Load keys"""
         if kid == "":
             kid = self.get_last_kid()
-
-        return kid, self.__load_key_files(kid)
+        return kid, self.__load_key_files(require_valid_kid(kid))
 
     def save_keys(self, kid: str, keys: dict) -> None:
         """Save keys and set them as the last keys"""
+        require_valid_kid(kid)
         with self.__lock():
             self.__save_key_file(kid, keys)
             self.__save_last_id_file(kid)
 
-    def increase_counter(self, kid: str, limit: int = 0) -> int | None:
-        """Atomically increase the counter of signed tokens of a key"""
-        with self.__lock():
-            data = self.__load_key_files(kid)["data"]
-            if limit and data["counter"] >= limit:
-                return None
-            data["counter"] += 1
-            self.__save_key_file(kid, data)
-            return data["counter"]
-
     def replace_last_keys(self, last_kid: str, kid: str, keys: dict) -> str:
         """Atomically save new keys as the last keys (key rotation)"""
+        require_valid_kid(kid)
         with self.__lock():
             current = self.get_last_kid()
             if current != last_kid:
@@ -84,6 +79,7 @@ class StorageFile(AbstractKeyStorage):
 
     def update_metadata(self, kid: str, metadata: dict) -> None:
         """Atomically update metadata fields of a key record"""
+        require_valid_kid(kid)
         with self.__lock():
             data = self.__load_key_files(kid)["data"]
             data.update(metadata)
@@ -134,8 +130,7 @@ class StorageFile(AbstractKeyStorage):
 
     def delete_keys(self, kid: str) -> None:
         """Delete keys from the storage"""
-        if not is_valid_kid(kid):
-            raise ValueError(f"Invalid Key ID '{kid}'.")
+        require_valid_kid(kid)
         with self.__lock():
             os.remove(os.path.join(self.__cert_dir, f"{kid}.json"))
 
@@ -183,6 +178,7 @@ class StorageFile(AbstractKeyStorage):
 
     def save_last_kid(self, kid: str) -> None:
         """Save last Key ID"""
+        require_valid_kid(kid)
         with self.__lock():
             self.__save_last_id_file(kid)
 

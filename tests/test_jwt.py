@@ -15,6 +15,8 @@ from joserfc_wrapper import (
     WrapJWT,
 )
 
+from .conftest import last_kid
+
 
 def test_requires_wrapjwk():
     with pytest.raises(ObjectTypeError):
@@ -28,21 +30,30 @@ def test_create_and_decode(jwt, jwk, claims):
     assert decoded.header == {
         "typ": "JWT",
         "alg": "ES256",
-        "kid": jwk.get_kid(),
+        "kid": last_kid(jwk),
     }
     assert {k: decoded.claims[k] for k in claims} == claims
     assert isinstance(decoded.claims["iat"], int)
-    with pytest.warns(DeprecationWarning, match="get_kid"):
-        assert jwt.get_kid() == jwk.get_kid()
+    assert not hasattr(jwt, "get_kid"), "removed in 1.0.0"
+
+
+def test_create_ed25519(jwt, jwk, claims):
+    jwk.rotate("Ed25519")
+
+    decoded = jwt.decode(jwt.create(claims=dict(claims)))
+
+    assert decoded.header["alg"] == "Ed25519"
+    assert decoded.header["kid"] == last_kid(jwk)
 
 
 def test_create_keeps_custom_claims(jwt, claims):
-    token = jwt.create(claims={**claims, "role": "admin"})
+    token = jwt.create(claims={**claims, "role": "admin", "uid": 1})
 
-    assert jwt.decode(token).claims["role"] == "admin"
+    claims = jwt.decode(token).claims
+    assert claims["role"] == "admin" and claims["uid"] == 1
 
 
-@pytest.mark.parametrize("missing", ["iss", "aud"])
+@pytest.mark.parametrize("missing", ["iss", "aud", "sub"])
 def test_create_missing_claim(jwt, claims, missing):
     del claims[missing]
 
@@ -52,14 +63,7 @@ def test_create_missing_claim(jwt, claims, missing):
 
 @pytest.mark.parametrize(
     "key, value",
-    [
-        ("iss", 1),
-        ("aud", None),
-        ("uid", "123"),
-        ("uid", True),
-        ("sub", 123),
-        ("sub", ""),
-    ],
+    [("iss", 1), ("aud", None), ("sub", 123), ("sub", ""), ("sub", None)],
 )
 def test_create_wrong_claim_type(jwt, claims, key, value):
     claims[key] = value
@@ -68,59 +72,23 @@ def test_create_wrong_claim_type(jwt, claims, key, value):
         jwt.create(claims=claims)
 
 
-def test_uid_is_optional(jwt, claims):
-    """Since 0.8.0 'uid' is not required"""
-    del claims["uid"]
+def test_uid_is_a_custom_claim(jwt, claims):
+    """Any type since 1.0.0, 'sub' identifies the subject"""
+    token = jwt.create(claims={**claims, "uid": "abc"})
 
-    assert "uid" not in jwt.decode(jwt.create(claims=claims)).claims
-
-
-def test_sub(jwt, claims):
-    token = jwt.create(claims={**claims, "sub": "user-123"})
-
-    assert jwt.decode(token).claims["sub"] == "user-123"
+    assert jwt.decode(token).claims["uid"] == "abc"
 
 
-def test_create_without_sub_is_deprecated(jwt, claims):
-    claims.pop("sub", None)
-    with pytest.warns(DeprecationWarning, match="'sub' will be required"):
-        jwt.create(claims=claims)
-
-
-def test_create_with_sub_does_not_warn(jwt, claims, recwarn):
-    jwt.create(claims={**claims, "sub": "123"})
-
-    assert not [w for w in recwarn if "'sub'" in str(w.message)]
-
-
-def test_create_increases_counter(jwt, storage, claims):
-    jwt.create(claims=dict(claims))
-    jwt.create(claims=dict(claims))
-
-    loaded = WrapJWK(storage)
-    loaded.load_keys()
-    assert loaded.get_counter() == 2
-
-
-@pytest.mark.filterwarnings("ignore:.payload. is deprecated:DeprecationWarning")
-def test_create_rotates_keys_by_payload(jwt, jwk, storage, claims):
-    first_kid = jwk.get_kid()
-    tokens = [jwt.create(claims=dict(claims), payload=2) for _ in range(3)]
-
-    kids = [jwt.decode(t).header["kid"] for t in tokens]
-    assert kids[:2] == [first_kid, first_kid]
-    assert kids[2] != first_kid
-    last = WrapJWK(storage)
-    last.load_keys()
-    assert last.get_kid() == kids[2] and last.get_counter() == 1
+def test_create_without_payload_parameter(jwt, claims):
+    with pytest.raises(TypeError):
+        jwt.create(dict(claims), payload=2)  # type: ignore[call-arg]
 
 
 def test_decode_token_signed_by_older_key(jwt, jwk, claims):
     token = jwt.create(claims=dict(claims))
-    jwk.generate_keys()
-    jwk.save_keys()
+    jwk.rotate()
 
-    assert jwt.decode(token).claims["uid"] == claims["uid"]
+    assert jwt.decode(token).claims["sub"] == claims["sub"]
 
 
 def test_decode_invalid_kid(jwt, claims):
@@ -133,20 +101,6 @@ def test_decode_invalid_kid(jwt, claims):
         jwt.decode(forged)
 
 
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_validate(jwt, claims):
-    token = jwt.decode(jwt.create(claims=dict(claims), exp=60))
-
-    assert jwt.validate(token, {"iss": claims["iss"], "aud": claims["aud"]})
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_validate_missing_claim(jwt, claims):
-    token = jwt.decode(jwt.create(claims=dict(claims), exp=60))
-
-    assert not jwt.validate(token, {"role": "admin"})
-
-
 def test_create_does_not_modify_claims(jwt, claims):
     original = dict(claims)
     jwt.create(claims=claims)
@@ -154,16 +108,18 @@ def test_create_does_not_modify_claims(jwt, claims):
     assert claims == original
 
 
-def test_decode_uses_public_key(jwt, claims):
+def test_decode_reads_only_the_public_key(jwt, storage, claims):
     token = jwt.create(claims=dict(claims))
 
-    with patch.object(WrapJWK, "get_private_key", side_effect=AssertionError):
-        assert jwt.decode(token).claims["uid"] == claims["uid"]
+    with patch.object(storage, "load_keys", wraps=storage.load_keys) as load:
+        jwt.decode(token)
+    # the verification key is cached since the storage was used by create
+    assert load.call_count <= 1
 
 
 def test_decode_bad_signature(jwt, claims):
     token = jwt.create(claims=dict(claims))
-    other = jwt.create(claims={**claims, "uid": 999})
+    other = jwt.create(claims={**claims, "sub": "999"})
     forged = ".".join([*token.split(".")[:2], other.split(".")[2]])
 
     with pytest.raises(BadSignatureError):
@@ -185,29 +141,12 @@ def test_decode_missing_kid(jwt, claims):
         jwt.decode(forged)
 
 
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_validate_wrong_value(jwt, claims):
-    token = jwt.decode(jwt.create(claims=dict(claims), exp=60))
-
-    assert not jwt.validate(token, {"iss": "https://other.example.com"})
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_validate_expired(jwt, claims):
-    expired = {**claims, "exp": int(time.time()) - 60}
-    token = jwt.decode(jwt.create(claims=expired))
-
-    assert not jwt.validate(token, {"iss": claims["iss"]})
-
-
 def test_decode_unknown_kid(jwt, claims, tmp_path):
     token = jwt.create(claims=dict(claims))
     other = tmp_path / "other"
     other.mkdir()
-    storage = StorageFile(str(other))
-    other_jwk = WrapJWK(storage)
-    other_jwk.generate_keys()
-    other_jwk.save_keys()
+    other_jwk = WrapJWK(StorageFile(str(other)))
+    other_jwk.rotate()
 
     with pytest.raises(KeysLoadError):
         WrapJWT(other_jwk).decode(token)
@@ -218,21 +157,10 @@ def test_create_without_keys(storage, claims):
         WrapJWT(WrapJWK(storage)).create(claims=claims)
 
 
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_create_with_exp(jwt, claims):
     token = jwt.decode(jwt.create(claims=dict(claims), exp=300))
 
     assert token.claims["exp"] == token.claims["iat"] + 300
-    assert jwt.validate(token, {"iss": claims["iss"]})
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_create_with_exp_expired(jwt, claims, monkeypatch):
-    token = jwt.create(claims=dict(claims), exp=1)
-    now = time.time()
-    monkeypatch.setattr(time, "time", lambda: now + 120)
-
-    assert not jwt.validate(jwt.decode(token), {"iss": claims["iss"]})
 
 
 def test_create_without_exp(jwt, claims):
@@ -252,28 +180,6 @@ def test_create_exp_in_claims_and_parameter(jwt, claims):
         jwt.create(claims={**claims, "exp": int(time.time()) + 60}, exp=60)
 
 
-def test_create_invalid_exp_does_not_count(jwt, jwk, storage, claims):
-    with pytest.raises(CreateTokenError):
-        jwt.create(claims=dict(claims), exp=0)
-
-    assert storage.load_keys()[1]["data"]["counter"] == 0
-
-
 def test_error_message_without_description():
     assert str(TokenDecodeError()) == "Invalid token format."
     assert str(TokenDecodeError("detail")) == "Invalid token format.: detail"
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_validate_token_without_exp(jwt, claims):
-    """Since 0.4.0 a token without exp is invalid also in validate"""
-    token = jwt.decode(jwt.create(claims=dict(claims)))
-
-    assert not jwt.validate(token, {"iss": claims["iss"]})
-
-
-def test_validate_is_deprecated(jwt, claims):
-    token = jwt.decode(jwt.create(claims=dict(claims), exp=60))
-
-    with pytest.warns(DeprecationWarning, match="use WrapJWT.verify"):
-        assert jwt.validate(token, {"iss": claims["iss"]})

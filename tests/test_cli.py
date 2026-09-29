@@ -55,18 +55,18 @@ def test_keys(tmp_path, monkeypatch):
 
 
 def test_token_check_show(cli, capsys):
-    token = cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5")
+    token = cli.token(iss="iss", aud="aud", sub="1", exp="minutes=5")
 
     assert cli.check(iss="iss", aud="aud", token=token) == "Token is valid."
     assert cli.show(token=token, header=True) == ""
     out = capsys.readouterr().out
     assert "'alg': 'ES256'" in out
-    assert "'uid': 1" in out
+    assert "'sub': '1'" in out
     assert "'exp':" in out
 
 
 def test_token_exp_seconds(cli, capsys):
-    token = cli.token(iss="iss", aud="aud", uid=1, exp="hours=2")
+    token = cli.token(iss="iss", aud="aud", sub="1", exp="hours=2")
     cli.show(token=token)
 
     claims = ast.literal_eval(capsys.readouterr().out.removeprefix("Claims: "))
@@ -80,7 +80,7 @@ def test_token_exp_twice(cli, capsys):
         cli.token,
         iss="iss",
         aud="aud",
-        uid=1,
+        sub="1",
         exp="minutes=5",
         custom={"exp": 1},
     )
@@ -90,35 +90,16 @@ def test_token_custom_claims(cli, capsys):
     token = cli.token(
         iss="iss",
         aud="aud",
-        uid=1,
+        sub="1",
         exp="minutes=5",
-        custom={"role": "admin", "uid": 2},
+        custom={"role": "admin", "sub": "2"},
     )
     cli.show(token=token)
 
     out = capsys.readouterr().out
     assert "'role': 'admin'" in out
     # custom claims do not override required claims
-    assert "'uid': 1" in out
-
-
-def test_token_payload_rotates_keys(cli):
-    kids = set()
-    for _ in range(3):
-        token = cli.token(
-            iss="iss", aud="aud", uid=1, exp="minutes=5", payload=2
-        )
-        kids.add(token.split(".")[0])
-
-    assert len(kids) == 2
-
-
-def assert_fails(capsys, error: str, func, *args, **kwargs) -> None:
-    """CLI command must exit with code 1 and print error to stderr"""
-    with pytest.raises(SystemExit) as exc:
-        func(*args, **kwargs)
-    assert exc.value.code == 1
-    assert error in capsys.readouterr().err
+    assert "'sub': '1'" in out
 
 
 @pytest.mark.parametrize(
@@ -132,7 +113,9 @@ def assert_fails(capsys, error: str, func, *args, **kwargs) -> None:
     ],
 )
 def test_token_bad_exp(cli, capsys, exp, error):
-    assert_fails(capsys, error, cli.token, iss="iss", aud="aud", uid=1, exp=exp)
+    assert_fails(
+        capsys, error, cli.token, iss="iss", aud="aud", sub="1", exp=exp
+    )
 
 
 def test_token_bad_custom(cli, capsys):
@@ -143,50 +126,41 @@ def test_token_bad_custom(cli, capsys):
         cli.token,
         iss="iss",
         aud="aud",
-        uid=1,
+        sub="1",
         exp="minutes=5",
         custom=custom,
     )
 
 
-@pytest.mark.parametrize(
-    "payload, error",
-    [(-1, "zero (unlimited) or greater"), ("5", "must be a 'int'")],
-)
-def test_token_bad_payload(cli, capsys, payload, error):
-    assert_fails(
-        capsys,
-        error,
-        cli.token,
-        iss="iss",
-        aud="aud",
-        uid=1,
-        exp="minutes=5",
-        payload=payload,
-    )
+def assert_fails(capsys, error: str, func, *args, **kwargs) -> None:
+    """CLI command must exit with code 1 and print error to stderr"""
+    with pytest.raises(SystemExit) as exc:
+        func(*args, **kwargs)
+    assert exc.value.code == 1
+    assert error in capsys.readouterr().err
 
 
 def test_token_bad_claims(cli, capsys):
-    uid: Any = "1"
+    iss: Any = 1
     assert_fails(
         capsys,
         "CreateTokenError",
         cli.token,
-        iss="iss",
+        iss=iss,
         aud="aud",
-        uid=uid,
+        sub="1",
         exp="minutes=5",
     )
 
 
 def test_token_requires_exp(cli, capsys):
     assert_fails(
-        capsys, "--exp is required", cli.token, iss="iss", aud="aud", uid=1
+        capsys, "--exp is required", cli.token, iss="iss", aud="aud", sub="1"
     )
 
 
 def test_check_shows_reason(cli, capsys):
-    token = cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5")
+    token = cli.token(iss="iss", aud="aud", sub="1", exp="minutes=5")
 
     assert_fails(
         capsys,
@@ -201,7 +175,7 @@ def test_check_shows_reason(cli, capsys):
 def test_check_token_without_exp(cli, capsys, tmp_path):
     """Tokens without exp (created by the library) are invalid"""
     jwt = WrapJWT(WrapJWK(StorageFile(str(tmp_path))))
-    token = jwt.create({"iss": "iss", "aud": "aud", "uid": 1})
+    token = jwt.create({"iss": "iss", "aud": "aud", "sub": "1"})
 
     assert_fails(
         capsys,
@@ -214,7 +188,7 @@ def test_check_token_without_exp(cli, capsys, tmp_path):
 
 
 def test_check_invalid_claims(cli, capsys):
-    token = cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5")
+    token = cli.token(iss="iss", aud="aud", sub="1", exp="minutes=5")
 
     assert_fails(
         capsys,
@@ -246,39 +220,14 @@ def test_keys_error(cli, capsys, monkeypatch):
     assert_fails(capsys, "OSError: disk full", cli.keys)
 
 
-@pytest.mark.parametrize("version, expected", [(None, 2), ("1", 1), ("2", 2)])
-def test_vault_kv_version(monkeypatch, version, expected):
-    for var in ("VAULT_ADDR", "VAULT_TOKEN", "VAULT_MOUNT"):
-        monkeypatch.setenv(var, "x")
-    if version is None:
-        monkeypatch.delenv("VAULT_KV_VERSION", raising=False)
-    else:
-        monkeypatch.setenv("VAULT_KV_VERSION", version)
-
-    with patch(
-        "joserfc_wrapper.cli.gen_jwt.StorageVault", autospec=True
-    ) as vault:
-        GenerateJWT(storage="vault")
-
-    assert vault.call_args.kwargs["kv_version"] == expected
-
-
-def test_vault_bad_kv_version(monkeypatch, capsys):
-    for var in ("VAULT_ADDR", "VAULT_TOKEN", "VAULT_MOUNT"):
-        monkeypatch.setenv(var, "x")
-    monkeypatch.setenv("VAULT_KV_VERSION", "3")
-
-    assert_fails(capsys, "VAULT_KV_VERSION", GenerateJWT, storage="vault")
-
-
 def test_rotate_and_list(cli, capsys):
-    token = cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5")
+    token = cli.token(iss="iss", aud="aud", sub="1", exp="minutes=5")
 
     assert cli.rotate().startswith("New keys has been saved")
     lines = cli.list().splitlines()
 
     assert len(lines) == 2
-    assert "retired" in lines[0] and "tokens: 1" in lines[0]
+    assert "retired" in lines[0] and "ES256" in lines[0]
     assert "last" in lines[1] and "retired: -" in lines[1]
     # tokens signed by the retired keys stay valid
     assert cli.check(iss="iss", aud="aud", token=token) == "Token is valid."
@@ -293,7 +242,7 @@ def test_revoke_requires_yes(cli, capsys):
 
 
 def test_revoke(cli, capsys):
-    token = cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5")
+    token = cli.token(iss="iss", aud="aud", sub="1", exp="minutes=5")
     kid = cli.list().split()[0]
 
     result = cli.revoke(kid=kid, yes=True)
@@ -337,36 +286,19 @@ def test_token_max_key_age(cli):
     first = cli.list().split()[0]
 
     cli.token(
-        iss="iss", aud="aud", uid=1, exp="minutes=5", max_key_age="days=1"
+        iss="iss", aud="aud", sub="1", exp="minutes=5", max_key_age="days=1"
     )
     assert cli.list().split()[0] == first
     with patch("time.time", return_value=time.time() + 86401):
         cli.token(
-            iss="iss", aud="aud", uid=1, exp="minutes=5", max_key_age="days=1"
+            iss="iss", aud="aud", sub="1", exp="minutes=5", max_key_age="days=1"
         )
     assert len(cli.list().splitlines()) == 2
 
 
-def test_token_payload_is_deprecated(cli, capsys):
-    cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5", payload=5)
-
-    assert "--payload is deprecated" in capsys.readouterr().err
-
-
-def test_vault_kv_v1_is_deprecated(monkeypatch, capsys):
-    for var in ("VAULT_ADDR", "VAULT_TOKEN", "VAULT_MOUNT"):
-        monkeypatch.setenv(var, "x")
-    monkeypatch.setenv("VAULT_KV_VERSION", "1")
-
-    with patch("joserfc_wrapper.cli.gen_jwt.StorageVault", autospec=True):
-        GenerateJWT(storage="vault")
-
-    assert "KV v1 (VAULT_KV_VERSION=1) is deprecated" in capsys.readouterr().err
-
-
 def test_revoke_token(cli, capsys):
-    token = cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5")
-    other = cli.token(iss="iss", aud="aud", uid=2, exp="minutes=5")
+    token = cli.token(iss="iss", aud="aud", sub="1", exp="minutes=5")
+    other = cli.token(iss="iss", aud="aud", sub="2", exp="minutes=5")
 
     assert cli.revoke_token(token=token) == "Token has been revoked."
     assert_fails(
@@ -404,7 +336,7 @@ def test_redis_storage(monkeypatch, fake_redis):
 
     cli = GenerateJWT(storage="redis")
     cli.keys()
-    token = cli.token(iss="iss", aud="aud", uid=1, exp="minutes=5")
+    token = cli.token(iss="iss", aud="aud", sub="1", exp="minutes=5")
     cli.revoke_token(token=token)
 
     assert fake_redis == [("redis://host:6379/1", "app:")]
@@ -428,7 +360,7 @@ def test_token_sub(cli, capsys):
 
     claims = ast.literal_eval(capsys.readouterr().out.removeprefix("Claims: "))
     assert claims["sub"] == "user-1"
-    assert "uid" not in claims
+    assert set(claims) == {"iss", "aud", "sub", "jti", "iat", "exp"}
 
 
 def test_token_numeric_sub_is_string(cli, capsys):
@@ -439,22 +371,6 @@ def test_token_numeric_sub_is_string(cli, capsys):
 
     claims = ast.literal_eval(capsys.readouterr().out.removeprefix("Claims: "))
     assert claims["sub"] == "123"
-
-
-def test_token_without_sub_is_deprecated(cli, capsys):
-    capsys.readouterr()
-    cli.token(iss="iss", aud="aud", exp="minutes=5")
-
-    err = capsys.readouterr().err
-    assert "without --sub is deprecated" in err
-    assert "--uid" not in err
-
-
-def test_token_uid_is_deprecated(cli, capsys):
-    capsys.readouterr()
-    cli.token(iss="iss", aud="aud", uid=1, sub="1", exp="minutes=5")
-
-    assert "--uid is deprecated, use --sub" in capsys.readouterr().err
 
 
 def test_token_type(cli, capsys):
@@ -475,3 +391,42 @@ def test_token_type(cli, capsys):
         token=token,
         token_type="refresh+jwt",
     )
+
+
+def test_keys_algorithm(cli, capsys):
+    cli.keys(algorithm="Ed25519")
+    token = cli.token(iss="iss", aud="aud", sub="1", exp="minutes=5")
+    cli.show(token=token, header=True)
+
+    assert "'alg': 'Ed25519'" in capsys.readouterr().out
+    assert "Ed25519" in cli.list().splitlines()[-1]
+    assert cli.check(iss="iss", aud="aud", token=token) == "Token is valid."
+
+
+def test_token_algorithm_of_new_keys(cli, capsys):
+    """--algorithm is the algorithm of new keys after a rotation"""
+    cli.token(
+        iss="iss", aud="aud", sub="1", exp="minutes=5", algorithm="Ed25519"
+    )
+    assert "Ed25519" not in cli.list()
+    with patch("time.time", return_value=time.time() + 86401):
+        cli.token(
+            iss="iss",
+            aud="aud",
+            sub="1",
+            exp="minutes=5",
+            max_key_age="days=1",
+            algorithm="Ed25519",
+        )
+    assert "Ed25519" in cli.list().splitlines()[-1]
+
+
+def test_unsupported_algorithm(cli, capsys):
+    assert_fails(capsys, "Unsupported algorithm", cli.keys, algorithm="RS256")
+
+
+def test_token_requires_sub(cli):
+    with pytest.raises(TypeError):
+        cli.token(  # type: ignore[call-arg]
+            iss="iss", aud="aud", exp="minutes=5"
+        )

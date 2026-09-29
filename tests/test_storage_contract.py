@@ -10,7 +10,7 @@ from joserfc_wrapper import StorageFile, StorageRedis, StorageVault
 from joserfc_wrapper.testing import check_storage
 
 from .conftest import redis_cluster_url, redis_url, vault_env
-from .test_jwk import LegacyStorage
+from .test_jwk import MinimalStorage
 
 
 def test_file(tmp_path):
@@ -26,29 +26,18 @@ def test_redis_fake_decoded_responses():
     check_storage(StorageRedis(fakeredis.FakeRedis(decode_responses=True)))
 
 
-def test_legacy_storage():
-    """A custom storage of 0.2.x without atomic methods and listing"""
-    check_storage(LegacyStorage(), atomic=False)
+def test_minimal_storage():
+    """A custom storage with only the required methods"""
+    check_storage(MinimalStorage())
 
 
 @pytest.mark.vault
-@pytest.mark.filterwarnings("ignore:KV v1:DeprecationWarning")
-@pytest.mark.parametrize("kv_version", [2, 1])
-def test_vault(kv_version):
+def test_vault():
     env = vault_env()
     if env is None:
         pytest.skip("Vault is not configured (VAULT_ADDR, VAULT_TOKEN, ...)")
-    mount = env["VAULT_MOUNT"]
-    if kv_version == 1:
-        mount = os.environ.get("VAULT_MOUNT_V1", "")
-        if not mount:
-            pytest.skip("KV v1 mount is not configured (VAULT_MOUNT_V1)")
     check_storage(
-        StorageVault(
-            env["VAULT_ADDR"], env["VAULT_TOKEN"], mount, kv_version=kv_version
-        ),
-        # KV v1 has no check-and-set, it is not safe for concurrent writes
-        atomic=kv_version == 2,
+        StorageVault(env["VAULT_ADDR"], env["VAULT_TOKEN"], env["VAULT_MOUNT"])
     )
 
 

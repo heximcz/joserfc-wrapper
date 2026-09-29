@@ -18,6 +18,8 @@ from joserfc_wrapper import (
 from joserfc_wrapper.storage_redis import has_hash_tag
 from joserfc_wrapper.token_header import jti_digest
 
+from .conftest import key_part, last_kid
+
 
 @pytest.fixture
 def client() -> fakeredis.FakeRedis:
@@ -37,7 +39,7 @@ def test_is_key_storage(redis_storage):
 def test_key_names(redis_storage, client):
     jwk = WrapJWK(redis_storage)
     jwk.rotate()
-    kid = jwk.get_kid()
+    kid = last_kid(jwk)
     redis_storage.revoke_jti("jti1", int(time.time()) + 60)
 
     assert sorted(client.keys()) == sorted(
@@ -50,7 +52,7 @@ def test_key_names(redis_storage, client):
     assert json.loads(client.get("app:last-key-id")) == {"kid": kid}
     # the same record format as the other storages (without 'data')
     record = json.loads(client.get(f"app:{kid}"))
-    assert set(record) == {"keys", "counter", "created"}
+    assert set(record) == {"keys", "created"}
 
 
 def test_revoked_record_expires(redis_storage, client):
@@ -69,7 +71,7 @@ def test_prefix_separates_storages(client):
     assert len(first.list_kids()) == 1
     assert not second.list_kids()
     with pytest.raises(KeysNotFoundError):
-        WrapJWK(second).load_keys()
+        WrapJWK(second).load_secret_key()
 
 
 def test_list_kids_escapes_prefix(client):
@@ -91,12 +93,12 @@ def test_list_kids_skips_other_keys(redis_storage, client):
 
 def test_missing_keys(redis_storage):
     with pytest.raises(KeysNotFoundError):
-        WrapJWK(redis_storage).load_keys(uuid.uuid4().hex)
+        WrapJWK(redis_storage).load_secret_key(uuid.uuid4().hex)
 
 
-def test_increase_counter_missing_keys(redis_storage):
+def test_update_metadata_missing_keys(redis_storage):
     with pytest.raises(Exception, match="keys not found"):
-        redis_storage.increase_counter(uuid.uuid4().hex)
+        redis_storage.update_metadata(uuid.uuid4().hex, {"revoked": 1})
 
 
 def test_from_url():

@@ -7,8 +7,8 @@ import sys
 import tempfile
 import fire
 import datetime
-import warnings
 from typing import Optional, Dict, Any, NoReturn
+from joserfc_wrapper.algorithms import DEFAULT_ALGORITHM
 from joserfc_wrapper import (
     AbstractKeyStorage,
     InvalidTokenError,
@@ -32,11 +32,53 @@ def fail_exception(e: Exception) -> NoReturn:
     fail(f"{type(e).__name__}: {str(e)}")
 
 
+# options which are always strings, fire must not convert them to Python
+# literals (--sub=1.10 would be the float 1.1, a Key ID of digits an int)
+STRING_OPTIONS = {
+    "sub",
+    "kid",
+    "iss",
+    "aud",
+    "token",
+    "token_type",
+    "token-type",
+    "algorithm",
+    "output",
+}
+
+
+def keep_strings(argv: list[str]) -> list[str]:
+    """
+    Quote the values of STRING_OPTIONS, fire then keeps them as strings
+
+    Both forms are supported: --sub=1.10 and --sub 1.10.
+    """
+    result = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        name, eq, value = arg[2:].partition("=")
+        if arg.startswith("--") and name in STRING_OPTIONS:
+            if eq:
+                result.append(f"--{name}={json.dumps(value)}")
+            elif i + 1 < len(argv):
+                result += [arg, json.dumps(argv[i + 1])]
+                i += 1
+            else:
+                result.append(arg)
+        else:
+            result.append(arg)
+        i += 1
+    return result
+
+
 def parse_duration(option: str, value: str) -> int:
     """
     Duration like "minutes=5" in seconds, units: seconds, minutes, hours,
     days, weeks
     """
+    # fire converts --exp=5 to an int
+    value = str(value)
     if "=" not in value:
         fail(f"Error: {option}={value} bad format.")
     unit, _, number = value.partition("=")
@@ -46,7 +88,7 @@ def parse_duration(option: str, value: str) -> int:
             f'Error: "{unit}" in {option} is not in valid units: '
             f"{valid_units}."
         )
-    if not number.isdigit() or int(number) <= 0:
+    if not number.isascii() or not number.isdigit() or int(number) <= 0:
         fail(f"Error: {option}={value} value must be an integer greater zero.")
     return int(datetime.timedelta(**{unit: int(number)}).total_seconds())
 
@@ -65,7 +107,6 @@ class GenerateJWT:
 
     def __init__(self, storage: str = "vault") -> None:
         self.storage = storage
-        self.__vault_kv_version = None
         if storage == "vault":
             env_vars = ["VAULT_ADDR", "VAULT_TOKEN", "VAULT_MOUNT"]
             if not all(var in os.environ for var in env_vars):
@@ -77,16 +118,6 @@ class GenerateJWT:
             self.__vault_addr = os.environ["VAULT_ADDR"]
             self.__vault_token = os.environ["VAULT_TOKEN"]
             self.__vault_mount = os.environ["VAULT_MOUNT"]
-            kv_version = os.environ.get("VAULT_KV_VERSION", "2")
-            if kv_version not in ("1", "2"):
-                fail("VAULT_KV_VERSION must be 1 or 2 (default).")
-            if kv_version == "1":
-                print(
-                    "Warning: KV v1 (VAULT_KV_VERSION=1) is deprecated and "
-                    "will be removed in 1.0.0, move the keys to a KV v2 mount.",
-                    file=sys.stderr,
-                )
-            self.__vault_kv_version: int | None = int(kv_version)
         elif storage == "file":
             var = os.environ.get("CERT_DIR")
             if var is None:
@@ -112,7 +143,6 @@ class GenerateJWT:
                     self.__vault_addr,
                     self.__vault_token,
                     self.__vault_mount,
-                    kv_version=self.__vault_kv_version or 2,
                 )
                 self.__storage: AbstractKeyStorage = vault
                 self.__wjwk = WrapJWK(vault)
@@ -133,13 +163,12 @@ class GenerateJWT:
         self,
         iss: str,
         aud: str,
-        uid: Optional[int] = None,
+        sub: str,
         exp: str = "",
         custom: Optional[Dict[Any, Any]] = None,
-        payload: int = 0,
         max_key_age: str = "",
-        sub: Optional[str] = None,
         token_type: Optional[str] = None,
+        algorithm: str = DEFAULT_ALGORITHM,
     ) -> str:
         # pylint: disable=C0301
         """
@@ -148,36 +177,20 @@ class GenerateJWT:
         Required arguments:
             --iss=<issuer>: str
             --aud=<audince>: str
+            --sub=<subject, e.g. user ID>: str
             --exp=<expire after>: str
-            --sub=<subject, e.g. user ID>: str (recommended, required in 1.0.0)
         Optional arguments:
-            --uid=<id>: int (deprecated, use --sub)
             --token-type=<typ header>: str, e.g. "at+jwt"
             --custom=<custom data>: dict
             --max-key-age=<rotate keys after>: str
-            --payload=<signed key payload> (deprecated, use --max-key-age)
+            --algorithm=<algorithm of new keys>: ES256 (default) or Ed25519
             examples:
                 --exp="minutes=5" - valid units: "seconds=int" | "minutes=int" | "days=int" | "hours=int" | "weeks=int"
                 --custom="{var1:value1,var2:value2}"
                 --max-key-age="days=30"
         """
-        # required claims
-        claims: Dict[str, Any] = {
-            "iss": iss,
-            "aud": aud,
-        }
-        if sub is not None:
-            # fire converts --sub=123 to int, 'sub' is a string
-            claims["sub"] = str(sub)
-        else:
-            print(
-                "Warning: a token without --sub is deprecated, --sub will be "
-                "required in 1.0.0.",
-                file=sys.stderr,
-            )
-        if uid is not None:
-            claims["uid"] = uid
-            print("Warning: --uid is deprecated, use --sub.", file=sys.stderr)
+        # required claims, fire converts --sub=123 to int, 'sub' is a string
+        claims: Dict[str, Any] = {"iss": iss, "aud": aud, "sub": str(sub)}
 
         # expiration is required, a token without exp is always invalid
         if not exp:
@@ -200,48 +213,44 @@ class GenerateJWT:
                 if key not in claims:
                     claims[key] = value
 
-        # bool is a subclass of int
-        if not isinstance(payload, int) or isinstance(payload, bool):
-            fail("Error: --payload must be a 'int'.")
-        if payload < 0:
-            fail("Error: --payload must be zero (unlimited) or greater.")
-        if payload:
-            print(
-                "Warning: --payload is deprecated, use --max-key-age.",
-                file=sys.stderr,
-            )
-
-        # ok do token
         try:
             wjwt = WrapJWT(
-                self.__wjwk, max_key_age=key_age, token_type=token_type
+                self.__wjwk,
+                max_key_age=key_age,
+                token_type=token_type,
+                key_algorithm=algorithm,
             )
-            with warnings.catch_warnings():
-                # the warnings about payload and sub are printed above
-                warnings.simplefilter("ignore", DeprecationWarning)
-                return wjwt.create(claims=claims, payload=payload, exp=expire)
+            return wjwt.create(claims=claims, exp=expire)
         except Exception as e:  # pylint: disable=W0718
             fail_exception(e)
 
-    def keys(self) -> str:
+    def keys(self, algorithm: str = DEFAULT_ALGORITHM) -> str:
         """
         Create new KEYS (the first keys, or rotate the keys: the previous
         keys are retired, tokens signed by them stay valid until they expire)
+
+        Optional arguments:
+            --algorithm=<algorithm of the new keys>: ES256 (default) or
+              Ed25519
         """
         try:
-            self.__wjwk.rotate()
+            kid = self.__wjwk.rotate(algorithm)
             return (
                 f"New keys has been saved in '{self.storage}' "
-                f"storage with KID: '{self.__wjwk.get_kid()}'."
+                f"storage with KID: '{kid}'."
             )
         except Exception as e:  # pylint: disable=W0718
             fail_exception(e)
 
-    def rotate(self) -> str:
+    def rotate(self, algorithm: str = DEFAULT_ALGORITHM) -> str:
         """
         Rotate the keys (the same as keys)
+
+        Optional arguments:
+            --algorithm=<algorithm of the new keys>: ES256 (default) or
+              Ed25519
         """
-        return self.keys()
+        return self.keys(algorithm)
 
     def list(self) -> str:
         """
@@ -254,7 +263,7 @@ class GenerateJWT:
             fail_exception(e)
         lines = []
         for key in keys:
-            kid, counter = key["kid"], key["counter"]
+            kid, algorithm = key["kid"], key["algorithm"]
             created, retired, revoked = (
                 format_time(key[field])
                 for field in ("created", "retired", "revoked")
@@ -263,8 +272,8 @@ class GenerateJWT:
             if key["revoked"] is not None:
                 state = "revoked"
             lines.append(
-                f"{kid}  {state:8} created: {created}  retired: {retired}  "
-                f"revoked: {revoked}  tokens: {counter}"
+                f"{kid}  {state:8} {algorithm:8} created: {created}  "
+                f"retired: {retired}  revoked: {revoked}"
             )
         return "\n".join(lines) if lines else "No keys in the storage."
 
@@ -278,14 +287,15 @@ class GenerateJWT:
             --yes: revoke, without it only shows what would happen
         """
         try:
-            self.__wjwk.load_keys(kid)
+            # raises KeysNotFoundError for an unknown key
+            self.__wjwk.load_verification_key(kid)
             last = kid == self.__storage.get_last_kid()
         except Exception as e:  # pylint: disable=W0718
             fail_exception(e)
         if not yes:
             fail(
                 f"Key {kid} would be revoked, all tokens signed by it "
-                f"({self.__wjwk.get_counter()} tokens) become invalid."
+                "become invalid."
                 + (" New keys would be generated." if last else "")
                 + " Add --yes to revoke."
             )
@@ -343,40 +353,6 @@ class GenerateJWT:
         except Exception as e:  # pylint: disable=W0718
             fail_exception(e)
         return f"JWKS has been saved to '{output}'."
-
-    def upgrade_check(self, token: Any = None, lifetime: str = "") -> str:
-        """
-        Check the storage, the environment and tokens before the upgrade to
-        1.0.0. Prints BLOCKER (stops working after the upgrade) and WARNING
-        findings, exits with code 1 when there is a blocker.
-
-        Optional arguments:
-            --token=<jwt token>: a token created by the application, more
-              tokens separated by commas
-            --lifetime=<max token lifetime>: e.g. "days=1", reports keys
-              which 'prune' would delete
-        """
-        # pylint: disable=import-outside-toplevel
-        from joserfc_wrapper.cli.upgrade_check import (
-            BLOCKER,
-            report,
-            run_checks,
-            split_tokens,
-        )
-
-        seconds = parse_duration("--lifetime", lifetime) if lifetime else None
-        findings = run_checks(
-            self.storage,
-            self.__wjwk,
-            self.__vault_kv_version,
-            split_tokens(token),
-            seconds,
-        )
-        text = report(self.storage, findings)
-        if any(f.level == BLOCKER for f in findings):
-            print(text)
-            sys.exit(1)
-        return text
 
     def revoke_token(self, token: str) -> str:
         """
@@ -449,7 +425,7 @@ class GenerateJWT:
 
 
 def run() -> None:
-    fire.Fire(GenerateJWT)
+    fire.Fire(GenerateJWT, command=keep_strings(sys.argv[1:]))
 
 
 if __name__ == "__main__":

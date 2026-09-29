@@ -1,6 +1,5 @@
 """Tests against a running HashiCorp Vault (docker dev environment)"""
 
-import os
 import time
 from unittest.mock import patch
 import uuid
@@ -15,69 +14,58 @@ from joserfc_wrapper import (
     WrapJWT,
 )
 
-from .conftest import vault_env
+from .conftest import key_part, last_kid, vault_env
 
-pytestmark = [
-    pytest.mark.vault,
-    # KV v1 is deprecated, but still supported and tested
-    pytest.mark.filterwarnings("ignore:KV v1:DeprecationWarning"),
-]
+pytestmark = pytest.mark.vault
 
 
-@pytest.fixture(params=[2, 1], ids=["kv2", "kv1"])
-def storage(request) -> StorageVault:
+@pytest.fixture
+def storage() -> StorageVault:
     env = vault_env()
     if env is None:
         pytest.skip("Vault is not configured (VAULT_ADDR, VAULT_TOKEN, ...)")
-    mount = env["VAULT_MOUNT"]
-    if request.param == 1:
-        mount = os.environ.get("VAULT_MOUNT_V1", "")
-        if not mount:
-            pytest.skip("KV v1 mount is not configured (VAULT_MOUNT_V1)")
     return StorageVault(
-        env["VAULT_ADDR"], env["VAULT_TOKEN"], mount, kv_version=request.param
+        env["VAULT_ADDR"], env["VAULT_TOKEN"], env["VAULT_MOUNT"]
     )
 
 
-def test_roundtrip(storage, claims):
+@pytest.mark.parametrize("algorithm", ["ES256", "Ed25519"])
+def test_roundtrip(storage, claims, algorithm):
     jwk = WrapJWK(storage)
-    jwk.generate_keys()
-    jwk.save_keys()
+    kid = jwk.rotate(algorithm)
     jwt = WrapJWT(jwk)
 
     token = jwt.create(claims=claims)
 
-    assert storage.get_last_kid() == jwk.get_kid()
-    assert uuid.UUID(jwk.get_kid()).version == 4
-    assert jwt.decode(token).claims["uid"] == claims["uid"]
+    assert storage.get_last_kid() == kid == last_kid(jwk)
+    assert len(kid) == 43, "RFC 7638 thumbprint"
+    assert "counter" not in storage.load_keys(kid)[1]["data"]
+    assert jwt.decode(token).header["alg"] == algorithm
+    assert jwt.decode(token).claims["sub"] == claims["sub"]
     assert WrapJWE(jwk).decrypt(WrapJWE(jwk).encrypt("x")) == b"x"
 
 
-@pytest.mark.filterwarnings("ignore:.payload. is deprecated:DeprecationWarning")
-def test_counter_and_rotation(storage, claims):
+def test_keys_of_0x(storage, claims):
+    """A record saved by 0.x (uuid Key ID, counter) still verifies"""
     jwk = WrapJWK(storage)
-    jwk.generate_keys()
-    jwk.save_keys()
-    first = jwk.get_kid()
-    jwt = WrapJWT(jwk)
+    jwk.rotate()
+    data = storage.load_keys()[1]["data"]
+    kid = uuid.uuid4().hex
+    storage.save_keys(kid, {"keys": data["keys"], "counter": 5})
 
-    for _ in range(3):
-        jwt.create(claims=dict(claims), payload=2)
-
-    assert storage.load_keys(first)[1]["data"]["counter"] == 2
-    assert storage.get_last_kid() != first
-    assert storage.load_keys()[1]["data"]["counter"] == 1
+    assert jwk.load_verification_key(kid)[0] == key_part(jwk, "public", kid)
+    assert kid in storage.list_kids()
 
 
 def test_lifecycle(storage):
     """rotate, list, revoke and prune with a real Vault"""
     jwk = WrapJWK(storage)
     jwk.rotate()
-    first = jwk.get_kid()
+    first = last_kid(jwk)
     jwt = WrapJWT(jwk, issuer="https://example.com", audience="api")
-    raw = jwt.create({"uid": 1}, exp=60)
+    raw = jwt.create({"sub": "1"}, exp=60)
     jwk.rotate()
-    last = jwk.get_kid()
+    last = last_kid(jwk)
 
     kids = [key["kid"] for key in jwk.list_keys()]
     assert first in kids and last in kids

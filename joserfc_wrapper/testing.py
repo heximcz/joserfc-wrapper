@@ -18,35 +18,31 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from joserfc_wrapper.abstract_key_storage import AbstractKeyStorage
-from joserfc_wrapper.wrap_jwk import WrapJWK
+from joserfc_wrapper.wrap_jwk import WrapJWK, generate_keys
 from joserfc_wrapper.wrap_jwt import WrapJWT
 
-THREADS = 4
-INCREMENTS = 10
+THREADS = 8
 
 
-def check_storage(storage: AbstractKeyStorage, atomic: bool = True) -> None:
+def check_storage(storage: AbstractKeyStorage) -> None:
     """
     Run all checks supported by the storage
 
-    Verification keys and their cache are always checked. Listing and
-    deleting keys, JWKS and token revocation are checked only when the
-    storage implements them.
+    The required methods, verification keys and their cache and the
+    atomicity of 'replace_last_keys' and 'update_metadata' (concurrent
+    threads) are always checked. Listing and deleting keys, JWKS and token
+    revocation are checked only when the storage implements them.
 
     :param storage: storage to check
-    :param atomic: check concurrent changes ('increase_counter',
-        'replace_last_keys'), False for storages which are not safe for
-        concurrent processes
     :raises AssertionError: the storage breaks the contract
     """
     check_keys(storage)
     check_verification_keys(storage)
-    check_counter(storage)
     check_metadata(storage)
     check_replace_last_keys(storage)
+    check_concurrent_rotation(storage)
+    check_concurrent_metadata(storage)
     check_tokens(storage)
-    if atomic:
-        check_concurrent_counter(storage)
     if supports_listing(storage):
         check_list_and_delete(storage)
         check_jwks(storage)
@@ -54,33 +50,27 @@ def check_storage(storage: AbstractKeyStorage, atomic: bool = True) -> None:
         check_token_revocation(storage)
 
 
-def new_record(counter: int = 0) -> dict:
-    """Key record like WrapJWK saves it (keys are not real keys)"""
-    return {
-        "keys": {"private": {"x": 1}, "public": {"x": 2}, "secret": {"x": 3}},
-        "counter": counter,
-        "created": int(time.time()),
-        "retired": None,
-        "revoked": None,
-    }
+def new_keys(algorithm: str = "ES256") -> tuple[str, dict]:
+    """New keys (Key ID and record) like WrapJWK creates them"""
+    return generate_keys(algorithm)
 
 
-def save_new_keys(storage: AbstractKeyStorage, counter: int = 0) -> str:
-    """Save a new record as the last keys, return its Key ID"""
-    kid = uuid.uuid4().hex
-    storage.save_keys(kid, new_record(counter))
+def save_new_keys(storage: AbstractKeyStorage, algorithm: str = "ES256") -> str:
+    """Save new keys as the last keys, return the Key ID"""
+    kid, record = new_keys(algorithm)
+    storage.save_keys(kid, record)
     return kid
 
 
 def check_keys(storage: AbstractKeyStorage) -> None:
-    """save_keys, load_keys and get_last_kid"""
-    kid = save_new_keys(storage)
+    """save_keys, load_keys, get_last_kid and save_last_kid"""
+    kid, record = new_keys()
+    storage.save_keys(kid, record)
     assert storage.get_last_kid() == kid, "save_keys sets the last Key ID"
 
     loaded_kid, stored = storage.load_keys()
     assert loaded_kid == kid, "load_keys() loads the last keys"
-    expected = {**new_record(), "created": stored["data"]["created"]}
-    assert stored == {"data": expected}, "load_keys returns {'data': record}"
+    assert stored == {"data": record}, "load_keys returns {'data': record}"
 
     other = save_new_keys(storage)
     assert storage.load_keys(kid)[0] == kid, "load_keys(kid) loads the kid"
@@ -89,7 +79,7 @@ def check_keys(storage: AbstractKeyStorage) -> None:
     assert storage.get_last_kid() == kid, "save_last_kid sets the last kid"
     storage.save_last_kid(other)
 
-    missing = uuid.uuid4().hex
+    missing = new_keys()[0]
     try:
         storage.load_keys(missing)
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -106,17 +96,18 @@ def check_keys(storage: AbstractKeyStorage) -> None:
 
 def check_verification_keys(storage: AbstractKeyStorage) -> None:
     """load_verification_key (cached) and clear_key_cache"""
-    kid = save_new_keys(storage)
+    kid, record = new_keys()
+    storage.save_keys(kid, record)
 
     public, revoked = storage.load_verification_key(kid)
-    assert public == new_record()["keys"]["public"], "the public key"
+    assert public == record["keys"]["public"], "the public key"
     assert revoked is None
 
     storage.update_metadata(kid, {"revoked": 123})
     storage.clear_key_cache(kid)
     assert storage.load_verification_key(kid)[1] == 123, "revoked after clear"
 
-    missing = uuid.uuid4().hex
+    missing = new_keys()[0]
     try:
         storage.load_verification_key(missing)
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -127,70 +118,82 @@ def check_verification_keys(storage: AbstractKeyStorage) -> None:
         raise AssertionError("a missing Key ID must raise")
 
 
-def check_counter(storage: AbstractKeyStorage) -> None:
-    """increase_counter with and without a limit"""
-    kid = save_new_keys(storage)
-    last = save_new_keys(storage)
-
-    assert storage.increase_counter(kid) == 1
-    assert storage.increase_counter(kid, limit=2) == 2
-    assert storage.increase_counter(kid, limit=2) is None, "limit reached"
-    assert storage.load_keys(kid)[1]["data"]["counter"] == 2
-    assert storage.get_last_kid() == last, "the last Key ID is not changed"
-
-
 def check_metadata(storage: AbstractKeyStorage) -> None:
     """update_metadata keeps other fields and the last Key ID"""
-    kid = save_new_keys(storage, counter=5)
+    kid, record = new_keys()
+    storage.save_keys(kid, record)
     last = save_new_keys(storage)
 
     storage.update_metadata(kid, {"retired": 123})
-    storage.increase_counter(kid)
+    storage.update_metadata(kid, {"revoked": 456})
 
     data = storage.load_keys(kid)[1]["data"]
-    assert data["retired"] == 123
-    assert data["counter"] == 6, "update_metadata keeps the counter"
-    assert data["keys"] == new_record()["keys"]
-    assert storage.get_last_kid() == last
+    assert data["retired"] == 123 and data["revoked"] == 456
+    assert data["keys"] == record["keys"], "update_metadata keeps the keys"
+    assert data["created"] == record["created"]
+    assert storage.get_last_kid() == last, "the last Key ID is not changed"
 
 
 def check_replace_last_keys(storage: AbstractKeyStorage) -> None:
     """replace_last_keys saves the keys only when the last kid matches"""
     first = save_new_keys(storage)
-    second, third = uuid.uuid4().hex, uuid.uuid4().hex
+    (second, record), (third, other) = new_keys(), new_keys()
 
-    assert storage.replace_last_keys(first, second, new_record()) == second
+    assert storage.replace_last_keys(first, second, record) == second
     assert storage.get_last_kid() == second
+    assert storage.load_keys()[1]["data"] == record
     # another process already rotated the keys
-    assert storage.replace_last_keys(first, third, new_record()) == second
+    assert storage.replace_last_keys(first, third, other) == second
     assert storage.get_last_kid() == second
+
+
+def check_concurrent_rotation(storage: AbstractKeyStorage) -> None:
+    """replace_last_keys from concurrent threads: only one rotation wins"""
+    last = save_new_keys(storage)
+    candidates = [new_keys() for _ in range(THREADS)]
+
+    def rotate(candidate: tuple[str, dict]) -> str:
+        return storage.replace_last_keys(last, candidate[0], candidate[1])
+
+    with ThreadPoolExecutor(THREADS) as pool:
+        results = list(pool.map(rotate, candidates))
+
+    winners = [kid for kid, _ in candidates if kid in results]
+    assert len(winners) == 1, f"one rotation wins, got {len(winners)}"
+    assert set(results) == set(winners), "all threads see the winner"
+    assert storage.get_last_kid() == winners[0]
+
+
+def check_concurrent_metadata(storage: AbstractKeyStorage) -> None:
+    """update_metadata from concurrent threads loses no field"""
+    kid, record = new_keys()
+    storage.save_keys(kid, record)
+
+    def update(i: int) -> None:
+        storage.update_metadata(kid, {f"field{i}": i})
+
+    with ThreadPoolExecutor(THREADS) as pool:
+        list(pool.map(update, range(THREADS)))
+
+    data = storage.load_keys(kid)[1]["data"]
+    lost = [i for i in range(THREADS) if data.get(f"field{i}") != i]
+    assert not lost, f"lost updates of metadata: {lost}"
+    assert data["keys"] == record["keys"]
 
 
 def check_tokens(storage: AbstractKeyStorage) -> None:
-    """WrapJWK and WrapJWT work with the storage"""
+    """WrapJWK and WrapJWT work with the storage (ES256 and Ed25519)"""
     jwk = WrapJWK(storage)
-    jwk.rotate()
     jwt = WrapJWT(jwk, issuer="https://example.com", audience="api")
-    token = jwt.create({"uid": 1}, exp=60)
+    tokens = []
+    for algorithm in ("ES256", "Ed25519"):
+        jwk.rotate(algorithm)
+        tokens.append(jwt.create({"sub": algorithm}, exp=60))
     jwk.rotate()
 
-    assert jwt.verify(token).claims["uid"] == 1, "retired keys still verify"
-    assert jwt.verify(jwt.create({"uid": 2}, exp=60)).claims["uid"] == 2
-
-
-def check_concurrent_counter(storage: AbstractKeyStorage) -> None:
-    """increase_counter from concurrent threads loses no increment"""
-    kid = save_new_keys(storage)
-
-    def increase(_: int) -> None:
-        for _ in range(INCREMENTS):
-            storage.increase_counter(kid)
-
-    with ThreadPoolExecutor(THREADS) as pool:
-        list(pool.map(increase, range(THREADS)))
-
-    counter = storage.load_keys(kid)[1]["data"]["counter"]
-    assert counter == THREADS * INCREMENTS, f"lost increments: {counter}"
+    for token, sub in zip(tokens, ("ES256", "Ed25519")):
+        assert jwt.verify(token).claims["sub"] == sub, "retired keys verify"
+    assert jwt.verify(jwt.create({"sub": "1"}, exp=60)).claims["sub"] == "1"
 
 
 def supports_listing(storage: AbstractKeyStorage) -> bool:
@@ -225,15 +228,17 @@ def check_list_and_delete(storage: AbstractKeyStorage) -> None:
 def check_jwks(storage: AbstractKeyStorage) -> None:
     """load_jwks: all keys except revoked keys, no private keys"""
     kid = save_new_keys(storage)
+    ed25519 = save_new_keys(storage, "Ed25519")
     revoked = save_new_keys(storage)
     storage.update_metadata(revoked, {"revoked": 123})
     storage.clear_key_cache(revoked)
 
     keys = {key["kid"]: key for key in storage.load_jwks()["keys"]}
 
-    assert kid in keys, "the JWKS contains the keys"
+    assert kid in keys and ed25519 in keys, "the JWKS contains the keys"
     assert revoked not in keys, "the JWKS does not contain revoked keys"
     assert keys[kid]["use"] == "sig" and keys[kid]["alg"] == "ES256"
+    assert keys[ed25519]["alg"] == "Ed25519"
     for key in keys.values():
         assert "d" not in key and "private" not in key, "no private keys"
 
@@ -251,7 +256,7 @@ def check_read_only_storage(storage: AbstractKeyStorage, kid: str) -> None:
     assert revoked is None or isinstance(revoked, int)
     assert any(key["kid"] == kid for key in storage.load_jwks()["keys"])
 
-    missing = uuid.uuid4().hex
+    missing, record = new_keys()
     try:
         storage.load_verification_key(missing)
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -264,7 +269,7 @@ def check_read_only_storage(storage: AbstractKeyStorage, kid: str) -> None:
 
     for call in (
         storage.get_last_kid,
-        lambda: storage.save_keys(missing, new_record()),
+        lambda: storage.save_keys(missing, record),
     ):
         try:
             call()

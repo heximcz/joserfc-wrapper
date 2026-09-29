@@ -7,9 +7,9 @@ from typing import Any
 from urllib.parse import urlparse
 
 import requests
-from joserfc.jwk import ECKey
 
 from joserfc_wrapper.abstract_key_storage import AbstractKeyStorage
+from joserfc_wrapper.algorithms import import_key, key_algorithm
 from joserfc_wrapper.token_header import is_valid_kid
 
 READ_ONLY = (
@@ -89,8 +89,12 @@ class StorageJWKS(AbstractKeyStorage):
         self.max_stale = max_stale
         self.timeout = timeout
         self.__url, self.__path = self.__parse_source(source, allow_http)
+        self.__allow_http = allow_http
         self.__session = session or requests.Session()
+        # the state (keys, times), never held during a download
         self.__lock = threading.Lock()
+        # one download at a time
+        self.__download_lock = threading.Lock()
         # kid -> public JWK of the last successful download
         self.__keys: dict[str, dict] | None = None
         # monotonic times of the last successful download and last attempt
@@ -116,13 +120,26 @@ class StorageJWKS(AbstractKeyStorage):
         keys = self.__current_keys()
         return {
             "keys": [
-                {**public, "kid": kid, "use": "sig", "alg": "ES256"}
+                {
+                    **public,
+                    "kid": kid,
+                    "use": "sig",
+                    "alg": key_algorithm(public),
+                }
                 for kid, public in keys.items()
             ]
         }
 
     def get_last_kid(self) -> str:
         """Not supported, the JWKS has no last keys"""
+        raise NotImplementedError(READ_ONLY)
+
+    def replace_last_keys(self, last_kid: str, kid: str, keys: dict) -> str:
+        """Not supported, read-only"""
+        raise NotImplementedError(READ_ONLY)
+
+    def update_metadata(self, kid: str, metadata: dict) -> None:
+        """Not supported, read-only"""
         raise NotImplementedError(READ_ONLY)
 
     def load_keys(self, kid: str = "") -> tuple[str, dict]:
@@ -141,55 +158,98 @@ class StorageJWKS(AbstractKeyStorage):
         """
         Return the keys, download the JWKS when it is older than ttl or
         does not contain kid (limited by refresh_interval)
+
+        One thread downloads, the others use the current keys meanwhile
+        when they contain their kid (a slow source does not block
+        verifying tokens of known keys).
         """
         with self.__lock:
-            now = time.monotonic()
-            expired = self.__keys is None or now - self.__fetched_at >= self.ttl
-            unknown = (
-                kid is not None
-                and self.__keys is not None
-                and kid not in self.__keys
+            need = self.__needs_refresh(kid, time.monotonic())
+            usable = self.__keys is not None and (
+                kid is None or kid in self.__keys
             )
-            interval = (
-                FIRST_RETRY_INTERVAL
-                if self.__keys is None
-                else self.refresh_interval
-            )
-            if (expired or unknown) and (
-                self.__attempted_at is None
-                or now - self.__attempted_at >= interval
-            ):
-                self.__refresh(now)
-            if self.__keys is None:
-                raise RuntimeError(
-                    f"JWKS '{self.source}' is not loaded: "
-                    f"{type(self.__last_error).__name__}: {self.__last_error}"
-                ) from self.__last_error
-            if now - self.__fetched_at >= self.max_stale:
-                raise RuntimeError(
-                    f"JWKS '{self.source}' is older than max_stale "
-                    f"({self.max_stale} s), the source is not available: "
-                    f"{type(self.__last_error).__name__}: {self.__last_error}"
-                ) from self.__last_error
-            return self.__keys
+        if need:
+            # wait for a running download only without usable keys
+            if self.__download_lock.acquire(blocking=not usable):
+                try:
+                    now = time.monotonic()
+                    with self.__lock:
+                        # another thread may have downloaded meanwhile
+                        need = self.__needs_refresh(kid, now)
+                        if need:
+                            self.__attempted_at = now
+                    if need:
+                        self.__refresh(now)
+                finally:
+                    self.__download_lock.release()
+        with self.__lock:
+            return self.__checked_keys(time.monotonic())
+
+    def __needs_refresh(self, kid: str | None, now: float) -> bool:
+        """Call under the lock"""
+        expired = self.__keys is None or now - self.__fetched_at >= self.ttl
+        unknown = (
+            kid is not None
+            and self.__keys is not None
+            and kid not in self.__keys
+        )
+        interval = (
+            FIRST_RETRY_INTERVAL
+            if self.__keys is None
+            else self.refresh_interval
+        )
+        return (expired or unknown) and (
+            self.__attempted_at is None or now - self.__attempted_at >= interval
+        )
+
+    def __checked_keys(self, now: float) -> dict[str, dict]:
+        """
+        Call under the lock
+
+        :raises RuntimeError: no JWKS or older than max_stale
+        """
+        if self.__keys is None:
+            raise RuntimeError(
+                f"JWKS '{self.source}' is not loaded: "
+                f"{type(self.__last_error).__name__}: {self.__last_error}"
+            ) from self.__last_error
+        if now - self.__fetched_at >= self.max_stale:
+            raise RuntimeError(
+                f"JWKS '{self.source}' is older than max_stale "
+                f"({self.max_stale} s), the source is not available: "
+                f"{type(self.__last_error).__name__}: {self.__last_error}"
+            ) from self.__last_error
+        return self.__keys
 
     def __refresh(self, now: float) -> None:
-        """Download the JWKS, keep the previous keys after a failure"""
-        self.__attempted_at = now
+        """
+        Download the JWKS (without the lock of the state), keep the previous
+        keys after a failure
+        """
         try:
             keys = self.__parse(self.__download())
         except Exception as e:  # pylint: disable=broad-exception-caught
             # the previous keys are used until max_stale
-            self.__last_error = e
+            with self.__lock:
+                self.__last_error = e
             return
-        self.__keys = keys
-        self.__fetched_at = now
-        self.__last_error = None
+        with self.__lock:
+            self.__keys = keys
+            self.__fetched_at = now
+            self.__last_error = None
 
     def __download(self) -> Any:
         if self.__url is not None:
             response = self.__session.get(self.__url, timeout=self.timeout)
             response.raise_for_status()
+            # a redirect must not leave https (a changed JWKS allows anyone
+            # to create valid tokens)
+            final = urlparse(str(response.url)).scheme.lower()
+            if final != "https" and not self.__allow_http:
+                raise ValueError(
+                    f"The JWKS was redirected to {final}://, only https:// "
+                    "is allowed."
+                )
             return response.json()
         with open(self.__path, "r", encoding="utf-8") as f:
             return json.load(f)
@@ -197,7 +257,8 @@ class StorageJWKS(AbstractKeyStorage):
     @staticmethod
     def __parse(document: Any) -> dict[str, dict]:
         """
-        Return kid -> public JWK of the ES256 signing keys of a JWKS
+        Return kid -> public JWK of the signing keys of a JWKS (ES256,
+        Ed25519)
 
         Keys of other types or algorithms are ignored.
 
@@ -215,11 +276,13 @@ class StorageJWKS(AbstractKeyStorage):
                 raise ValueError(
                     "The JWKS contains a private key, never publish it."
                 )
+            try:
+                algorithm = key_algorithm(jwk)
+            except ValueError:
+                continue
             if (
-                jwk.get("kty") != "EC"
-                or jwk.get("crv") != "P-256"
-                or jwk.get("use", "sig") != "sig"
-                or jwk.get("alg", "ES256") != "ES256"
+                jwk.get("use", "sig") != "sig"
+                or jwk.get("alg", algorithm) != algorithm
             ):
                 continue
             kid = jwk.get("kid")
@@ -227,7 +290,7 @@ class StorageJWKS(AbstractKeyStorage):
                 raise ValueError(f"Invalid Key ID in the JWKS: {kid!r}.")
             public = {k: jwk[k] for k in ("kty", "crv", "x", "y") if k in jwk}
             # raises for an invalid key
-            ECKey.import_key(public)
+            import_key(public)
             keys[kid] = public
         return keys
 

@@ -3,12 +3,12 @@
 import math
 import time
 import uuid
-import warnings
 from joserfc_wrapper.exceptions import (
     ObjectTypeError,
     ConfigurationError,
     CreateTokenError,
     InvalidTokenError,
+    KeysLoadError,
     KeysNotFoundError,
     TokenClaimError,
     TokenDecodeError,
@@ -20,6 +20,12 @@ from joserfc_wrapper.exceptions import (
     TokenNotYetValidError,
     TokenSignatureError,
 )
+from joserfc_wrapper.algorithms import (
+    DEFAULT_ALGORITHM,
+    check_algorithm,
+    import_key,
+    key_algorithm as algorithm_of,
+)
 from joserfc_wrapper.token_header import read_kid
 from joserfc_wrapper.wrap_jwk import WrapJWK
 
@@ -30,7 +36,6 @@ from joserfc.errors import (
     ExpiredTokenError,
     JoseError,
 )
-from joserfc.jwk import ECKey
 from joserfc.jwt import Token, JWTClaimsRegistry, ClaimsOption
 
 
@@ -47,8 +52,7 @@ class WrapJWT:
     """
     Create and verify JWT
 
-    Safe for threads (since 0.8.0), one WrapJWT can be shared in the
-    application.
+    Safe for threads, one WrapJWT can be shared in the application.
     """
 
     def __init__(
@@ -64,6 +68,7 @@ class WrapJWT:
         revocation: bool = False,
         require_jti: bool = False,
         token_type: str | None = None,
+        key_algorithm: str = DEFAULT_ALGORITHM,
     ) -> None:
         """
         :param wrapjwk: keys of the storage
@@ -78,26 +83,29 @@ class WrapJWT:
         :param leeway: tolerance of clocks in seconds for 'exp', 'nbf',
             'iat' and 'max_age'
         :param max_key_age: 'create' rotates the keys after this number of
-            seconds since their creation (recommended instead of 'payload')
+            seconds since their creation
         :param max_token_lifetime: the longest allowed lifetime of a token
             in seconds, 'create' refuses a longer 'exp', required by 'prune'
         :param revocation: 'verify' checks revoked tokens ('revoke_token'),
             the storage must support it (StorageRedis, StorageVault,
             StorageFile), one more storage read for each token
-        :param require_jti: with revocation, a token without 'jti' (created
-            by versions older than 0.4.0) is invalid
+        :param require_jti: with revocation, a token without 'jti' (not
+            created by 'create', which always adds it) is invalid
         :param token_type: the kind of tokens, e.g. "at+jwt" (access tokens,
             RFC 9068) or an own type like "refresh+jwt": 'create' writes it
             to the 'typ' header, 'verify' refuses other types
             (TokenTypeError), so a token of one kind cannot be used as
             another (RFC 8725). None = 'typ: JWT' without a check.
+        :param key_algorithm: the algorithm of new keys created by 'create'
+            (rotation by 'max_key_age' or of revoked keys), ES256 (default)
+            or Ed25519. Tokens are always signed and verified by the
+            algorithm of their key.
         :raises ObjectTypeError: wrapjwk is not WrapJWK
         :raises ConfigurationError: invalid parameters
         """
         if not isinstance(wrapjwk, WrapJWK):
             raise ObjectTypeError
         self.__jwk: WrapJWK = wrapjwk
-        self.__kid: str = ""
 
         if issuer is not None and (not isinstance(issuer, str) or not issuer):
             raise ConfigurationError("'issuer' must be a non-empty string.")
@@ -125,6 +133,7 @@ class WrapJWT:
         ):
             raise ConfigurationError("'token_type' must be a non-empty string.")
         self.token_type = token_type
+        self.key_algorithm = check_algorithm(key_algorithm)
         if (
             self.max_token_lifetime is not None
             and self.default_exp is not None
@@ -133,20 +142,6 @@ class WrapJWT:
             raise ConfigurationError(
                 "'default_exp' must not be greater than 'max_token_lifetime'."
             )
-
-    def get_kid(self) -> str:
-        """
-        Return the Key ID of the last decoded token
-
-        Deprecated since 0.8.0 (removed in 1.0.0), not reliable with
-        threads, use token.header["kid"] of the returned token.
-        """
-        warnings.warn(
-            "WrapJWT.get_kid() is deprecated, use token.header['kid']",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.__kid
 
     def decode(self, token: str) -> Token:
         """
@@ -173,11 +168,14 @@ class WrapJWT:
         :raises: see 'decode'
         """
         kid = read_kid(token)
-        # only for the deprecated get_kid, never read by this class
-        self.__kid = kid
         public, revoked = self.__jwk.load_verification_key(kid)
-        key = ECKey.import_key(public)
-        decoded = jwt.decode(token, key, algorithms=["ES256"])
+        # the algorithm of the key, never of the header of the token
+        try:
+            algorithm = algorithm_of(public)
+            key = import_key(public)
+        except ValueError as e:
+            raise KeysLoadError(f"Key ID '{kid}': {e}") from e
+        decoded = jwt.decode(token, key, algorithms=[algorithm])
         # the payload of a JWT is a JSON object (RFC 7519)
         if not isinstance(decoded.claims, dict):
             raise TokenDecodeError("The payload is not a JSON object.")
@@ -185,11 +183,12 @@ class WrapJWT:
 
     def verify(self, token: str, claims: dict | None = None) -> Token:
         """
-        Verify a token: signature, 'exp', 'nbf', 'iat', 'iss', 'aud',
-        'max_age', a revoked key, optionally other claims and a revoked
+        Verify a token: signature (by the algorithm of its key), 'exp',
+        'nbf', 'iat', 'iss', 'aud', 'sub', 'max_age', a revoked key, the
+        'typ' header ('token_type'), optionally other claims and a revoked
         token ('revocation')
 
-        A token without 'exp' is invalid.
+        A token without 'exp' or 'sub' is invalid.
 
         :param token: Token to verify
         :param claims: other claims which must be equal in the token
@@ -197,8 +196,9 @@ class WrapJWT:
         :raises ConfigurationError: 'issuer' or 'audience' is not set
         :raises InvalidTokenError: invalid token (HTTP 401), one of
             TokenDecodeError, TokenKidInvalidError, TokenKidUnknownError,
-            TokenSignatureError, TokenKeyRevokedError, TokenExpiredError,
-            TokenNotYetValidError, TokenClaimError, TokenRevokedError
+            TokenSignatureError, TokenKeyRevokedError, TokenTypeError,
+            TokenExpiredError, TokenNotYetValidError, TokenClaimError,
+            TokenRevokedError
         :raises KeysLoadError: storage error (HTTP 500)
         """
         if self.issuer is None or self.audience is None:
@@ -229,46 +229,16 @@ class WrapJWT:
                 f"Expected type '{self.token_type}', got {typ!r}."
             )
 
-    def validate(self, token: Token, claims: dict) -> bool:
+    def create(self, claims: dict, exp: int | None = None) -> str:
         """
-        Validate claims of a decoded token
+        Create a JWT signed by the last keys of the storage
 
-        Deprecated, use 'verify'. The same checks as 'verify' (a token
-        without 'exp' is invalid), 'issuer' and 'audience' of WrapJWT are
-        checked only when they are set.
+        'sub' (the subject, e.g. a user ID, a string) is required. 'iss'
+        and 'aud' are added from WrapJWT when they are not in the claims,
+        'jti' (unique token ID) is always added when it is not in the
+        claims.
 
-        :param token: Decoded token (call this after decode)
-        :param claims: Claims which must be equal in token
-        :returns: False when the token is invalid
-        """
-        warnings.warn(
-            "WrapJWT.validate is deprecated, use WrapJWT.verify",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        try:
-            self.__check_token_claims(token, claims)
-            return True
-        except InvalidTokenError:
-            return False
-
-    def create(
-        self, claims: dict, payload: int = 0, exp: int | None = None
-    ) -> str:
-        """
-        Create a JWT Token with claims and signed with existing key.
-
-        'iss' and 'aud' are added from WrapJWT when they are not in the
-        claims, 'jti' (unique token ID) is always added when it is not in
-        the claims. 'sub' (the subject, e.g. a user ID as a string) is
-        recommended, a token without it is deprecated (DeprecationWarning),
-        'sub' will be required in 1.0.0. 'uid' is optional since 0.8.0
-        (an int when present).
-
-        :param claims:
-        :param payload: deprecated since 0.5.0 (removed in 1.0.0), use
-            'max_key_age' of WrapJWT. 0 = unlimited, otherwise the keys are
-            rotated after this number of signed tokens.
+        :param claims: claims of the token, 'sub' is required
         :param exp: token expires after this number of seconds, sets the
             'exp' claim, default 'default_exp' of WrapJWT, None = no
             expiration (or 'exp' in claims)
@@ -281,34 +251,20 @@ class WrapJWT:
         # check required claims
         self.__check_claims(claims)
         self.__check_exp(claims, exp)
+        self.__check_numeric_dates(claims)
         self.__check_jti(claims)
         if exp is None and "exp" not in claims:
             exp = self.default_exp
         self.__check_lifetime(claims, exp)
         claims.setdefault("jti", uuid.uuid4().hex)
-        if payload:
-            warnings.warn(
-                "'payload' is deprecated, use 'max_key_age' of WrapJWT",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        if "sub" not in claims:
-            warnings.warn(
-                "a token without the 'sub' claim is deprecated, 'sub' will "
-                "be required in 1.0.0",
-                DeprecationWarning,
-                stacklevel=2,
-            )
 
-        # load the last keys, count the token and rotate the keys by age
-        # (max_key_age), revocation or payload; the shared WrapJWK does
-        # not change (threads)
+        # the last keys, rotated by age (max_key_age) or revocation
         kid, private_key = self.__jwk.reserve_signing_key(
-            payload, self.max_key_age
+            self.max_key_age, self.key_algorithm
         )
 
-        # create header
-        headers = {"alg": "ES256", "kid": kid}
+        # create header, the algorithm of the key
+        headers = {"alg": algorithm_of(private_key), "kid": kid}
         if self.token_type is not None:
             headers["typ"] = self.token_type
         # add actual iat to claims
@@ -317,8 +273,10 @@ class WrapJWT:
             claims["exp"] = claims["iat"] + exp
 
         # generate token
-        private = ECKey.import_key(private_key)
-        token = jwt.encode(headers, claims, private)
+        private = import_key(private_key)
+        token = jwt.encode(
+            headers, claims, private, algorithms=[headers["alg"]]
+        )
 
         return token
 
@@ -341,12 +299,13 @@ class WrapJWT:
 
     def __check_token_claims(self, token: Token, claims: dict) -> None:
         """
-        Check claims of a decoded token (shared by 'verify' and 'validate')
+        Check claims of a decoded token
 
         :raises InvalidTokenError: invalid claims
         """
         options: dict[str, ClaimsOption] = {
             "exp": {"essential": True},
+            "sub": {"essential": True, "allow_blank": False},
         }
         if self.issuer is not None:
             options["iss"] = {"essential": True, "value": self.issuer}
@@ -374,7 +333,7 @@ class WrapJWT:
 
         if self.max_age is not None:
             iat = token.claims.get("iat")
-            if not isinstance(iat, int) or isinstance(iat, bool):
+            if not isinstance(iat, (int, float)) or isinstance(iat, bool):
                 raise TokenClaimError("Missing claim 'iat' (max_age is set).")
             if iat + self.max_age < int(time.time()) - self.leeway:
                 raise TokenExpiredError("Token is older than max_age.")
@@ -417,31 +376,21 @@ class WrapJWT:
         required_keys = {
             "iss": str,  # Issuer expected to be a string
             "aud": (str, list),  # Audience, a string or a list of strings
-        }
-        # optional claims, checked when present
-        optional_keys = {
             "sub": str,  # Subject (RFC 7519 StringOrURI)
-            "uid": int,  # User ID (not required since 0.8.0), an integer
         }
 
-        for key in required_keys:
+        for key, expected_type in required_keys.items():
             if key not in claims:
                 raise CreateTokenError(
                     f"Missing required claims argument: '{key}'."
                 )
-        checked = {
-            **required_keys,
-            **{k: v for k, v in optional_keys.items() if k in claims},
-        }
-        for key, expected_type in checked.items():
             value = claims[key]
-            # bool is a subclass of int
             if not isinstance(value, expected_type) or isinstance(value, bool):
                 raise CreateTokenError(
                     f"Incorrect type for claims argument '{key}': "
                     f"got '{type(value).__name__}'."
                 )
-        if "sub" in claims and not claims["sub"]:
+        if not claims["sub"]:
             raise CreateTokenError("Claim 'sub' must not be empty.")
         aud = claims["aud"]
         if isinstance(aud, list) and (
@@ -470,6 +419,22 @@ class WrapJWT:
                 "not both."
             )
 
+    @staticmethod
+    def __check_numeric_dates(claims: dict) -> None:
+        """
+        'exp' and 'nbf' in claims are NumericDate values (RFC 7519)
+
+        :raises CreateTokenError: not a number
+        """
+        for name in ("exp", "nbf"):
+            value = claims.get(name)
+            if name in claims and (
+                not isinstance(value, (int, float)) or isinstance(value, bool)
+            ):
+                raise CreateTokenError(
+                    f"Claim '{name}' must be a NumericDate (unix timestamp)."
+                )
+
     def __check_lifetime(self, claims: dict, exp: int | None) -> None:
         """
         The token must expire within max_token_lifetime (when it is set)
@@ -483,10 +448,7 @@ class WrapJWT:
                 raise CreateTokenError(
                     "'exp' is required when 'max_token_lifetime' is set."
                 )
-            claim = claims["exp"]
-            if not isinstance(claim, int) or isinstance(claim, bool):
-                raise CreateTokenError("Claim 'exp' must be an integer.")
-            exp = claim - int(time.time())
+            exp = math.ceil(claims["exp"] - time.time())
         if exp > self.max_token_lifetime:
             raise CreateTokenError(
                 f"'exp' is longer than max_token_lifetime "

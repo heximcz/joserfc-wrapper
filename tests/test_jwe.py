@@ -10,6 +10,8 @@ from joserfc_wrapper import (
 )
 from joserfc_wrapper.token_header import read_header
 
+from .conftest import key_part, last_kid
+
 
 def test_requires_wrapjwk():
     with pytest.raises(ObjectTypeError):
@@ -27,10 +29,9 @@ def test_encrypt_decrypt(jwk, data):
 
 def test_decrypt_by_kid_after_rotation(jwk):
     jwe = WrapJWE(jwk)
-    kid = jwk.get_kid()
+    kid = last_kid(jwk)
     encrypted = jwe.encrypt("secret")
-    jwk.generate_keys()
-    jwk.save_keys()
+    jwk.rotate()
 
     assert jwe.decrypt(encrypted, kid=kid) == b"secret"
 
@@ -48,21 +49,20 @@ def test_decrypt_wrong_type(jwk):
 def test_header_contains_kid(jwk):
     encrypted = WrapJWE(jwk).encrypt("secret")
 
-    assert read_header(encrypted)["kid"] == jwk.get_kid()
+    assert read_header(encrypted)["kid"] == last_kid(jwk)
 
 
 def test_decrypt_after_rotation(jwk):
     jwe = WrapJWE(jwk)
     encrypted = jwe.encrypt("secret")
-    jwk.generate_keys()
-    jwk.save_keys()
+    jwk.rotate()
 
     assert jwe.decrypt(encrypted) == b"secret"
 
 
 def test_decrypt_data_without_kid(jwk):
     """Data encrypted by older versions have no kid in the header"""
-    key = OctKey.import_key(jwk.get_secret_key())
+    key = OctKey.import_key(key_part(jwk, "secret"))
     protected = {"alg": "A128KW", "enc": "A128GCM"}
     encrypted = joserfc_jwe.encrypt_compact(protected, "secret", key)
 

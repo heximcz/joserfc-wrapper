@@ -26,6 +26,8 @@ from joserfc_wrapper import (
     WrapJWT,
 )
 
+from .conftest import key_part, last_kid
+
 ISS = "https://example.com"
 AUD = "api"
 
@@ -37,7 +39,7 @@ def jwt(jwk) -> WrapJWT:
 
 
 def issue(jwt: WrapJWT, **claims) -> str:
-    return jwt.create(claims={"uid": 1, **claims})
+    return jwt.create(claims={"sub": "1", **claims})
 
 
 def now() -> int:
@@ -72,7 +74,7 @@ def test_invalid_configuration(jwk, kwargs):
 
 @pytest.mark.parametrize("kwargs", [{}, {"issuer": ISS}, {"audience": AUD}])
 def test_verify_requires_issuer_and_audience(jwk, kwargs):
-    token = WrapJWT(jwk).create({"iss": ISS, "aud": AUD, "uid": 1}, exp=60)
+    token = WrapJWT(jwk).create({"iss": ISS, "aud": AUD, "sub": "1"}, exp=60)
 
     with pytest.raises(ConfigurationError):
         WrapJWT(jwk, **kwargs).verify(token)
@@ -93,7 +95,7 @@ def test_verify(jwt):
 def test_verify_other_claims(jwt):
     raw = issue(jwt, role="admin")
 
-    assert jwt.verify(raw, {"role": "admin"}).claims["uid"] == 1
+    assert jwt.verify(raw, {"role": "admin"}).claims["sub"] == "1"
     with pytest.raises(TokenClaimError):
         jwt.verify(raw, {"role": "user"})
 
@@ -109,7 +111,7 @@ def test_verify_other_claims(jwt):
     ],
 )
 def test_verify_audience(jwk, audience, aud, valid):
-    raw = WrapJWT(jwk).create({"iss": ISS, "aud": aud, "uid": 1}, exp=60)
+    raw = WrapJWT(jwk).create({"iss": ISS, "aud": aud, "sub": "1"}, exp=60)
     jwt = WrapJWT(jwk, issuer=ISS, audience=audience)
 
     if valid:
@@ -137,7 +139,7 @@ def test_all_errors_are_invalid_token_errors():
 
 def test_verify_wrong_issuer(jwk, jwt):
     raw = WrapJWT(jwk).create(
-        {"iss": "https://other.com", "aud": AUD, "uid": 1}, exp=60
+        {"iss": "https://other.com", "aud": AUD, "sub": "1"}, exp=60
     )
 
     with pytest.raises(TokenClaimError):
@@ -145,7 +147,7 @@ def test_verify_wrong_issuer(jwk, jwt):
 
 
 def test_verify_without_exp(jwk, jwt):
-    raw = WrapJWT(jwk).create({"iss": ISS, "aud": AUD, "uid": 1})
+    raw = WrapJWT(jwk).create({"iss": ISS, "aud": AUD, "sub": "1"})
 
     with pytest.raises(TokenClaimError, match="exp"):
         jwt.verify(raw)
@@ -167,7 +169,7 @@ def test_verify_not_yet_valid(jwt):
 
 def test_verify_leeway(jwk):
     issuer = WrapJWT(jwk, issuer=ISS, audience=AUD)
-    raw = issuer.create({"uid": 1, "exp": now() - 10})
+    raw = issuer.create({"sub": "1", "exp": now() - 10})
 
     with pytest.raises(TokenExpiredError):
         issuer.verify(raw)
@@ -205,8 +207,7 @@ def test_verify_unknown_kid(jwt, tmp_path):
     other_dir = tmp_path / "other"
     other_dir.mkdir()
     other = WrapJWK(StorageFile(str(other_dir)))
-    other.generate_keys()
-    other.save_keys()
+    other.rotate()
 
     with pytest.raises(TokenKidUnknownError):
         WrapJWT(other, issuer=ISS, audience=AUD).verify(raw)
@@ -231,7 +232,7 @@ def test_verify_storage_error_is_not_invalid_token(jwt, storage, monkeypatch):
 
 def test_file_storage_keys_not_found(storage):
     with pytest.raises(KeysNotFoundError) as exc:
-        WrapJWK(storage).load_keys(uuid.uuid4().hex)
+        WrapJWK(storage).load_verification_key(uuid.uuid4().hex)
 
     assert isinstance(exc.value, KeysLoadError)
     assert isinstance(exc.value.__cause__, FileNotFoundError)
@@ -249,7 +250,7 @@ def test_vault_storage_keys_not_found(error, expected):
         jwk = WrapJWK(StorageVault("url", "token", "mount"))
 
         with pytest.raises(KeysLoadError) as exc:
-            jwk.load_keys(uuid.uuid4().hex)
+            jwk.load_verification_key(uuid.uuid4().hex)
 
     assert type(exc.value) is expected
 
@@ -259,7 +260,7 @@ def test_vault_storage_keys_not_found(error, expected):
 
 def test_create_adds_issuer_and_audience(jwk):
     raw = WrapJWT(jwk, issuer=ISS, audience=["api", "admin"]).create(
-        {"uid": 1}, exp=60
+        {"sub": "1"}, exp=60
     )
     claims = WrapJWT(jwk).decode(raw).claims
 
@@ -283,7 +284,7 @@ def test_create_conflict_with_configuration(jwt, claims):
 
 def test_create_default_exp(jwk):
     raw = WrapJWT(jwk, default_exp=120).create(
-        {"iss": ISS, "aud": AUD, "uid": 1}
+        {"iss": ISS, "aud": AUD, "sub": "1"}
     )
     claims = WrapJWT(jwk).decode(raw).claims
 
@@ -291,14 +292,14 @@ def test_create_default_exp(jwk):
 
 
 def test_create_exp_overrides_default_exp(jwt):
-    raw = jwt.create({"uid": 1}, exp=60)
+    raw = jwt.create({"sub": "1"}, exp=60)
     claims = jwt.verify(raw).claims
 
     assert claims["exp"] == claims["iat"] + 60
 
 
 def test_create_without_default_exp_has_no_exp(jwk):
-    raw = WrapJWT(jwk).create({"iss": ISS, "aud": AUD, "uid": 1})
+    raw = WrapJWT(jwk).create({"iss": ISS, "aud": AUD, "sub": "1"})
 
     assert "exp" not in WrapJWT(jwk).decode(raw).claims
 
