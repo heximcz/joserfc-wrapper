@@ -82,9 +82,8 @@ class AbstractKeyStorage(ABC):
         if limit and counter >= limit:
             return None
         counter += 1
-        self.save_keys(
-            kid, {"keys": stored["data"]["keys"], "counter": counter}
-        )
+        # keep all fields of the record (metadata)
+        self.save_keys(kid, {**stored["data"], "counter": counter})
         # 'save_keys' sets the last Key ID
         if last_kid != kid:
             self._save_last_id(last_kid)
@@ -115,6 +114,54 @@ class AbstractKeyStorage(ABC):
             return current
         self.save_keys(kid, keys)
         return kid
+
+    def update_metadata(self, kid: str, metadata: dict) -> None:
+        """
+        Atomically update metadata fields of a key record
+
+        Metadata are fields of the key record next to 'keys' and 'counter',
+        for example 'created', 'retired', 'revoked'. Override it with an
+        atomic implementation, the default implementation uses 'load_keys'
+        and 'save_keys' and is not atomic. It must not change the last
+        Key ID.
+
+        :param kid: Key ID
+        :param metadata: fields to set in the key record
+        :raises: Any
+        """
+        last_kid = self.get_last_kid()
+        _, stored = self.load_keys(kid)
+        self.save_keys(kid, {**stored["data"], **metadata})
+        # 'save_keys' sets the last Key ID
+        if last_kid != kid:
+            self._save_last_id(last_kid)
+
+    def list_kids(self) -> list[str]:
+        """
+        Return Key IDs of all keys in the storage
+
+        Required by 'WrapJWK.list_keys' and 'WrapJWK.prune'.
+
+        :returns: Key IDs
+        :raises NotImplementedError: the storage does not support it
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support listing keys."
+        )
+
+    def delete_keys(self, kid: str) -> None:
+        """
+        Delete keys from the storage
+
+        Required by 'WrapJWK.prune'. It must not delete the last keys,
+        'WrapJWK' never calls it for the last Key ID.
+
+        :param kid: Key ID
+        :raises NotImplementedError: the storage does not support it
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support deleting keys."
+        )
 
     @abstractmethod
     def _save_last_id(self, kid: str) -> None:

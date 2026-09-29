@@ -1,9 +1,12 @@
 """vault manipulation class"""
 
+import warnings
+
 import hvac
 from hvac.exceptions import InvalidPath, InvalidRequest
 from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
 from joserfc_wrapper.Exceptions import KeysSaveError
+from joserfc_wrapper.TokenHeader import is_valid_kid
 
 
 class StorageVault(AbstractKeyStorage):
@@ -29,11 +32,19 @@ class StorageVault(AbstractKeyStorage):
         :param mount: - Vault mount point
         :param kv_version: - version of the KV secrets engine, 2 (default)
             uses check-and-set and is safe for concurrent processes,
-            1 is for keys saved by older versions and is not atomic
+            1 is for keys saved by older versions, is not atomic and is
+            deprecated (removed in 1.0.0)
         :raises ValueError: unsupported kv_version
         """
         if kv_version not in (1, 2):
             raise ValueError("kv_version must be 1 or 2")
+        if kv_version == 1:
+            warnings.warn(
+                "KV v1 (kv_version=1) is deprecated and will be removed in "
+                "1.0.0, move the keys to a KV v2 mount",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self.url = url
         self.mount = mount
         self.kv_version = kv_version
@@ -91,6 +102,49 @@ class StorageVault(AbstractKeyStorage):
                 path=kid, mount_point=self.__mount
             )
         raise KeysSaveError("The last Key ID was not saved.")
+
+    def update_metadata(self, kid: str, metadata: dict) -> None:
+        """Atomically update metadata fields of a key record"""
+        if self.kv_version == 1:
+            super().update_metadata(kid, metadata)
+            return
+
+        for _ in range(self.cas_attempts):
+            keys, version = self.__read(kid)
+            keys.update(metadata)
+            if self.__write_cas(kid, keys, version):
+                return
+        raise KeysSaveError(f"Metadata of the key '{kid}' were not saved.")
+
+    def list_kids(self) -> list[str]:
+        """
+        Return Key IDs of all keys in the storage
+
+        The Vault policy needs the 'list' capability, KV v2:
+        '<mount>/metadata/*', KV v1: '<mount>/*'.
+        """
+        if self.kv_version == 1:
+            result = self.__client.secrets.kv.v1.list_secrets(
+                path="", mount_point=self.__mount
+            )
+        else:
+            result = self.__client.secrets.kv.v2.list_secrets(
+                path="", mount_point=self.__mount
+            )
+        return sorted(k for k in result["data"]["keys"] if is_valid_kid(k))
+
+    def delete_keys(self, kid: str) -> None:
+        """Delete keys (all versions) from the storage"""
+        if not is_valid_kid(kid):
+            raise ValueError(f"Invalid Key ID '{kid}'.")
+        if self.kv_version == 1:
+            self.__client.secrets.kv.v1.delete_secret(
+                path=kid, mount_point=self.__mount
+            )
+        else:
+            self.__client.secrets.kv.v2.delete_metadata_and_all_versions(
+                path=kid, mount_point=self.__mount
+            )
 
     def _save_last_id(self, kid: str) -> None:
         """Save last Key ID"""

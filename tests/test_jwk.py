@@ -125,6 +125,7 @@ def test_reserve_key_gives_up(jwk, storage, monkeypatch):
         jwk.reserve_key(payload=1)
 
 
+@pytest.mark.filterwarnings("ignore:.payload. is deprecated:DeprecationWarning")
 def test_legacy_storage(claims):
     storage = LegacyStorage()
     jwk = WrapJWK(storage)

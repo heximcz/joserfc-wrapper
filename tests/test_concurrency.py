@@ -9,6 +9,11 @@ from joserfc_wrapper import StorageFile, StorageVault, WrapJWK, WrapJWT
 
 from .conftest import CLAIMS, vault_env
 
+# payload is deprecated, but still supported and tested
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:.payload. is deprecated:DeprecationWarning"
+)
+
 PROCESSES = 6
 TOKENS = 20
 

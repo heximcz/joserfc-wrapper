@@ -12,6 +12,7 @@ from joserfc_wrapper.Exceptions import (
     TokenClaimError,
     TokenExpiredError,
     TokenKidUnknownError,
+    TokenKeyRevokedError,
     TokenNotYetValidError,
     TokenSignatureError,
 )
@@ -40,6 +41,8 @@ class WrapJWT:
         default_exp: int | None = None,
         max_age: int | None = None,
         leeway: int = 0,
+        max_key_age: int | None = None,
+        max_token_lifetime: int | None = None,
     ) -> None:
         """
         :param wrapjwk: keys of the storage
@@ -53,6 +56,10 @@ class WrapJWT:
             'iat', even with a later 'exp'
         :param leeway: tolerance of clocks in seconds for 'exp', 'nbf',
             'iat' and 'max_age'
+        :param max_key_age: 'create' rotates the keys after this number of
+            seconds since their creation (recommended instead of 'payload')
+        :param max_token_lifetime: the longest allowed lifetime of a token
+            in seconds, 'create' refuses a longer 'exp', required by 'prune'
         :raises ObjectTypeError: wrapjwk is not WrapJWK
         :raises ConfigurationError: invalid parameters
         """
@@ -68,6 +75,18 @@ class WrapJWT:
         self.default_exp = self.__check_seconds("default_exp", default_exp, 1)
         self.max_age = self.__check_seconds("max_age", max_age, 1)
         self.leeway = self.__check_seconds("leeway", leeway, 0) or 0
+        self.max_key_age = self.__check_seconds("max_key_age", max_key_age, 1)
+        self.max_token_lifetime = self.__check_seconds(
+            "max_token_lifetime", max_token_lifetime, 1
+        )
+        if (
+            self.max_token_lifetime is not None
+            and self.default_exp is not None
+            and self.default_exp > self.max_token_lifetime
+        ):
+            raise ConfigurationError(
+                "'default_exp' must not be greater than 'max_token_lifetime'."
+            )
 
     def get_kid(self) -> str:
         """Return Key ID"""
@@ -123,6 +142,8 @@ class WrapJWT:
             raise TokenSignatureError from e
         except JoseError as e:
             raise InvalidTokenError(str(e)) from e
+        if self.__jwk.is_revoked():
+            raise TokenKeyRevokedError(f"Key ID '{self.__kid}'.")
         self.__check_token_claims(decoded, claims or {})
         return decoded
 
@@ -160,9 +181,9 @@ class WrapJWT:
         the claims.
 
         :param claims:
-        :param payload: 0 = unlimited. In case it is set, it checks how many
-            times the key has been used for signing tokens. If the value
-            is exceeded, a new key is automatically generated.
+        :param payload: deprecated since 0.5.0 (removed in 1.0.0), use
+            'max_key_age' of WrapJWT. 0 = unlimited, otherwise the keys are
+            rotated after this number of signed tokens.
         :param exp: token expires after this number of seconds, sets the
             'exp' claim, default 'default_exp' of WrapJWT, None = no
             expiration (or 'exp' in claims)
@@ -178,10 +199,18 @@ class WrapJWT:
         self.__check_jti(claims)
         if exp is None and "exp" not in claims:
             exp = self.default_exp
+        self.__check_lifetime(claims, exp)
         claims.setdefault("jti", uuid.uuid4().hex)
+        if payload:
+            warnings.warn(
+                "'payload' is deprecated, use 'max_key_age' of WrapJWT",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
-        # load the last keys, count the token and rotate keys by payload
-        self.__jwk.reserve_key(payload)
+        # load the last keys, count the token and rotate the keys by age
+        # (max_key_age), revocation or payload
+        self.__jwk.reserve_key(payload, self.max_key_age)
 
         # create header
         headers = {"alg": "ES256", "kid": self.__jwk.get_kid()}
@@ -332,6 +361,44 @@ class WrapJWT:
                 "Set the expiration by the 'exp' parameter or in claims, "
                 "not both."
             )
+
+    def __check_lifetime(self, claims: dict, exp: int | None) -> None:
+        """
+        The token must expire within max_token_lifetime (when it is set)
+
+        :raises CreateTokenException: no exp or exp is too far
+        """
+        if self.max_token_lifetime is None:
+            return
+        if exp is None:
+            if "exp" not in claims:
+                raise CreateTokenException(
+                    "'exp' is required when 'max_token_lifetime' is set."
+                )
+            claim = claims["exp"]
+            if not isinstance(claim, int) or isinstance(claim, bool):
+                raise CreateTokenException("Claim 'exp' must be an integer.")
+            exp = claim - int(time.time())
+        if exp > self.max_token_lifetime:
+            raise CreateTokenException(
+                f"'exp' is longer than max_token_lifetime "
+                f"({self.max_token_lifetime} seconds)."
+            )
+
+    def prune(self) -> list[str]:
+        """
+        Delete keys which cannot sign any valid token anymore, see
+        'WrapJWK.prune' ('max_token_lifetime' and 'leeway' of WrapJWT)
+
+        :returns: Key IDs of deleted keys
+        :raises ConfigurationError: 'max_token_lifetime' is not set
+        :raises KeysLoadError, KeysSaveError: storage errors
+        """
+        if self.max_token_lifetime is None:
+            raise ConfigurationError(
+                "Set 'max_token_lifetime' of WrapJWT to prune keys."
+            )
+        return self.__jwk.prune(self.max_token_lifetime, self.leeway)
 
     @staticmethod
     def __check_jti(claims: dict) -> None:

@@ -1,3 +1,4 @@
+import uuid
 from unittest.mock import patch
 
 import pytest
@@ -29,11 +30,17 @@ def test_is_key_storage(client):
     assert isinstance(StorageVault("url", "token", "mount"), AbstractKeyStorage)
 
 
+def test_kv_v1_is_deprecated(client):
+    with pytest.warns(DeprecationWarning, match="removed in 1.0.0"):
+        StorageVault("url", "token", "mount", kv_version=1)
+
+
 def test_unsupported_kv_version(client):
     with pytest.raises(ValueError):
         StorageVault("url", "token", "mount", kv_version=3)
 
 
+@pytest.mark.filterwarnings("ignore:KV v1:DeprecationWarning")
 class TestKvV1:
     @pytest.fixture
     def kv(self, client):
@@ -185,3 +192,97 @@ class TestKvV2:
         kv.delete_metadata_and_all_versions.assert_called_once_with(
             path="kid2", mount_point="mount"
         )
+
+
+@pytest.mark.filterwarnings("ignore:KV v1:DeprecationWarning")
+class TestLifecycleKvV1:
+    @pytest.fixture
+    def kv(self, client):
+        return client.secrets.kv.v1
+
+    @pytest.fixture
+    def vault(self, client) -> StorageVault:
+        return StorageVault("url", "token", "mount", kv_version=1)
+
+    def test_list_kids(self, vault, kv):
+        kid = uuid.uuid4().hex
+        kv.list_secrets.return_value = {
+            "data": {"keys": [kid, "last-key-id", "other"]}
+        }
+
+        assert vault.list_kids() == [kid]
+        kv.list_secrets.assert_called_once_with(path="", mount_point="mount")
+
+    def test_delete_keys(self, vault, kv):
+        kid = uuid.uuid4().hex
+        vault.delete_keys(kid)
+
+        kv.delete_secret.assert_called_once_with(path=kid, mount_point="mount")
+
+    def test_update_metadata_keeps_last_kid(self, vault, kv):
+        kv.read_secret.side_effect = [
+            {"data": {"kid": "kid2"}},
+            {"data": KEYS},
+        ]
+
+        vault.update_metadata("kid1", {"revoked": 1})
+
+        writes = [c.kwargs for c in kv.create_or_update_secret.call_args_list]
+        assert writes[0]["secret"] == {**KEYS, "revoked": 1}
+        assert writes[-1]["secret"] == {"kid": "kid2"}
+
+
+class TestLifecycleKvV2:
+    @pytest.fixture
+    def kv(self, client):
+        return client.secrets.kv.v2
+
+    @pytest.fixture
+    def vault(self, client) -> StorageVault:
+        return StorageVault("url", "token", "mount")
+
+    def test_list_kids(self, vault, kv):
+        kids = sorted(uuid.uuid4().hex for _ in range(2))
+        kv.list_secrets.return_value = {
+            "data": {"keys": [kids[1], "last-key-id", kids[0]]}
+        }
+
+        assert vault.list_kids() == kids
+
+    def test_delete_keys(self, vault, kv):
+        kid = uuid.uuid4().hex
+        vault.delete_keys(kid)
+
+        kv.delete_metadata_and_all_versions.assert_called_once_with(
+            path=kid, mount_point="mount"
+        )
+
+    def test_delete_invalid_kid(self, vault, kv):
+        with pytest.raises(ValueError):
+            vault.delete_keys("last-key-id")
+        kv.delete_metadata_and_all_versions.assert_not_called()
+
+    def test_update_metadata(self, vault, kv):
+        kv.read_secret_version.return_value = v2_secret(dict(KEYS), 3)
+
+        vault.update_metadata("kid1", {"retired": 5})
+
+        kv.create_or_update_secret.assert_called_once_with(
+            mount_point="mount",
+            path="kid1",
+            secret={**KEYS, "retired": 5},
+            cas=3,
+        )
+
+    def test_update_metadata_retries_on_conflict(self, vault, kv):
+        kv.read_secret_version.side_effect = [
+            v2_secret(dict(KEYS), 3),
+            v2_secret({**KEYS, "counter": 1}, 4),
+        ]
+        kv.create_or_update_secret.side_effect = [CAS_ERROR, None]
+
+        vault.update_metadata("kid1", {"revoked": 7})
+
+        last = kv.create_or_update_secret.call_args.kwargs
+        assert last["cas"] == 4
+        assert last["secret"] == {**KEYS, "counter": 1, "revoked": 7}

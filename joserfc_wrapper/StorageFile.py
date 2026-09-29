@@ -6,6 +6,7 @@ import tempfile
 from contextlib import contextmanager
 from typing import Iterator
 from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
+from joserfc_wrapper.TokenHeader import is_valid_kid
 
 try:
     import fcntl
@@ -71,6 +72,28 @@ class StorageFile(AbstractKeyStorage):
             self.__save_last_id_file(kid)
             return kid
 
+    def update_metadata(self, kid: str, metadata: dict) -> None:
+        """Atomically update metadata fields of a key record"""
+        with self.__lock():
+            data = self.__load_key_files(kid)["data"]
+            data.update(metadata)
+            self.__save_key_file(kid, data)
+
+    def list_kids(self) -> list[str]:
+        """Return Key IDs of all keys in the storage"""
+        return sorted(
+            name[: -len(".json")]
+            for name in os.listdir(self.__cert_dir)
+            if name.endswith(".json") and is_valid_kid(name[: -len(".json")])
+        )
+
+    def delete_keys(self, kid: str) -> None:
+        """Delete keys from the storage"""
+        if not is_valid_kid(kid):
+            raise ValueError(f"Invalid Key ID '{kid}'.")
+        with self.__lock():
+            os.remove(os.path.join(self.__cert_dir, f"{kid}.json"))
+
     @contextmanager
     def __lock(self) -> Iterator[None]:
         """
@@ -92,17 +115,15 @@ class StorageFile(AbstractKeyStorage):
 
     def __save_key_file(self, kid: str, keys: dict) -> None:
         """Save keys file, call only under the lock"""
-        # must have 'data' key for HashiCorp Vault compatibility
-        data = {
-            "data": {
-                "keys": {
-                    "private": keys["keys"]["private"],
-                    "public": keys["keys"]["public"],
-                    "secret": keys["keys"]["secret"],
-                },
-                "counter": keys["counter"],
-            }
+        # must have 'data' key for HashiCorp Vault compatibility,
+        # other fields of the record (metadata) are kept
+        record = dict(keys)
+        record["keys"] = {
+            "private": keys["keys"]["private"],
+            "public": keys["keys"]["public"],
+            "secret": keys["keys"]["secret"],
         }
+        data = {"data": record}
         keys_path = os.path.join(self.__cert_dir, f"{kid}.json")
         self.__write_json(keys_path, data)
 

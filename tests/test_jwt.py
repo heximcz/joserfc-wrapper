@@ -68,6 +68,7 @@ def test_create_increases_counter(jwt, storage, claims):
     assert loaded.get_counter() == 2
 
 
+@pytest.mark.filterwarnings("ignore:.payload. is deprecated:DeprecationWarning")
 def test_create_rotates_keys_by_payload(jwt, jwk, claims):
     first_kid = jwk.get_kid()
     tokens = [jwt.create(claims=dict(claims), payload=2) for _ in range(3)]
