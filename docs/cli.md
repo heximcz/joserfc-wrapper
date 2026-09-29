@@ -16,6 +16,7 @@ genjw list --help [--storage=file]
 genjw revoke --help [--storage=file]
 genjw prune --help [--storage=file]
 genjw jwks --help [--storage=file]
+genjw upgrade-check --help [--storage=file]
 genjw revoke-token --help [--storage=file]
 ```
 
@@ -204,6 +205,25 @@ the token expires. `genjw check` rejects revoked tokens
 (`TokenRevokedError`) when the storage supports token revocation (all
 storages with keys). The application must verify tokens with
 `revocation=True`, see [Revoke tokens](./verify.md#revoke-tokens).
+
+## Upgrade check
+
+Before the upgrade to 1.0.0, check the storage, the environment and tokens
+created by your application (only in the 0.9.x series):
+
+```bash
+genjw upgrade-check
+genjw upgrade-check --token="<token>" --lifetime="days=1" --storage=file
+# more tokens separated by commas
+genjw upgrade-check --token="<token1>,<token2>"
+```
+
+- `BLOCKER` - stops working after the upgrade (e.g. Python 3.10, Vault KV
+  v1, tokens without `sub`), the command exits with code 1.
+- `WARNING` - a recommendation (e.g. the `vault` extra, old keys without
+  metadata, keys which `prune` would delete with `--lifetime`).
+
+See [Preparing for 1.0.0](./upgrading.md#preparing-for-100).
 
 ## Errors
 

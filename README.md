@@ -118,6 +118,7 @@ Full documentation: <https://joserfc-wrapper.readthedocs.io/>
 - [CLI](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/cli.md)
 - [Security notes for developers](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/security.md)
 - [Standards (RFC)](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/standards.md)
+- [Preparing for 1.0.0](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#preparing-for-100)
 - [Upgrading from 0.8.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-08x)
 - [Upgrading from 0.7.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-07x)
 - [Upgrading from 0.6.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-06x)

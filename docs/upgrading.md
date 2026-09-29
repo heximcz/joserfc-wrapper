@@ -1,5 +1,58 @@
 # Upgrading
 
+## Preparing for 1.0.0
+
+1.0.0 removes everything deprecated in the 0.x series. The changes are
+decided, details may change until the release. Prepare on 0.9.x, it
+supports the old and the new behavior.
+
+What changes in 1.0.0:
+
+- Python 3.11 or newer.
+- The Vault client `hvac` is installed only with the `vault` extra:
+  `pip install "joserfc-wrapper[vault]"`.
+- Vault KV v1 (`kv_version=1`, `VAULT_KV_VERSION=1`) is removed and will
+  not return.
+- `sub` is required by `create`, by `genjw token` (`--sub`) and by `verify`:
+  a token without `sub` is invalid.
+- Removed: `validate` (use `verify`), `payload` and `--payload` (use
+  `max_key_age`), the counter of tokens (`create` does not write to the
+  storage anymore), `uid` and `--uid` (use `sub`), the old module names
+  (`joserfc_wrapper.WrapJWT`, ...), `CreateTokenException` (use
+  `CreateTokenError`), `WrapJWT.get_kid()` (use `token.header["kid"]`),
+  `_save_last_id` of custom storages (implement `save_last_kid`).
+- New keys get a RFC 7638 thumbprint as `kid`, 0.9.x already accepts it.
+- New keys can use Ed25519, ES256 stays the default. RS256 is not and will
+  never be supported.
+
+How to prepare:
+
+1. Upgrade all services which create or verify tokens to 0.9.x, before any
+   of them uses 1.0.0 (keys of 1.0.0 have a new `kid` format).
+2. Run the tests of your application with deprecation warnings as errors,
+   they show everything removed in 1.0.0:
+   `python -W error::DeprecationWarning -m pytest`.
+3. Create tokens with `sub` and wait until the older tokens expire (the
+   longest lifetime of your tokens, `max_token_lifetime`).
+4. Vault: move the keys from KV v1 to KV v2 (see
+   [Vault policy](./storage.md#vault-policy)) and install
+   `joserfc-wrapper[vault]`.
+5. Custom storages: implement `save_last_kid(kid)`.
+6. Check the storage, the environment and a token of your application:
+
+   ```bash
+   genjw upgrade-check --token="<token>" --lifetime="days=1"
+   ```
+
+   It prints `BLOCKER` (stops working after the upgrade) and `WARNING`
+   findings and exits with code 1 when there is a blocker, see
+   [Upgrade check](./cli.md#upgrade-check).
+
+## Upgrading from 0.9.0
+
+- New command `genjw upgrade-check`, see
+  [Preparing for 1.0.0](#preparing-for-100). No other changes.
+
 ## Upgrading from 0.8.x
 
 - The library was checked against the RFCs of JWT, see
