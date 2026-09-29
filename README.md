@@ -9,10 +9,10 @@ management of signature keys.
   [joserfc](https://github.com/authlib/joserfc) library and adhering to RFC
   standards.
 - Signature keys stored in [HashiCorp Vault](https://www.vaultproject.io/)
-  (KV v2 or KV v1 secrets engine) or on the file system, or in a custom
-  storage.
-- Automatic key rotation after a given number of signed tokens, older tokens
-  stay verifiable.
+  (KV v2 secrets engine, KV v1 is deprecated) or on the file system, or in
+  a custom storage.
+- Key lifecycle: automatic rotation by age, older tokens stay verifiable,
+  revocation of leaked keys, deletion of old keys.
 - Encryption of secret data (JWE), for example inside token claims.
 - Safe for concurrent processes sharing the same storage.
 - `genjw` command line tool for keys and tokens.
@@ -41,10 +41,9 @@ from joserfc_wrapper import StorageFile, WrapJWK, WrapJWT
 
 storage = StorageFile(cert_dir="/etc/myapp/keys")
 
-# create the first signature keys (only once)
+# create the first signature keys (a next call rotates them)
 jwk = WrapJWK(storage)
-jwk.generate_keys()
-jwk.save_keys()
+jwk.rotate()
 
 # the rules of your tokens, tokens expire after 1 hour
 jwt = WrapJWT(
@@ -63,8 +62,8 @@ print(jwt.verify(token).claims)
 A custom storage, for example a database, must be a subclass of the
 [AbstractKeyStorage](https://github.com/heximcz/joserfc-wrapper/blob/main/joserfc_wrapper/AbstractKeyStorage.py)
 abstract class and implement the necessary methods. For concurrent processes
-override also `increase_counter` and `replace_last_keys` with atomic
-implementations.
+override also `increase_counter`, `replace_last_keys` and `update_metadata`
+with atomic implementations.
 
 ## Documentation
 

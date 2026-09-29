@@ -2,6 +2,12 @@
 
 Secret data inside tokens, encrypted by the secret key of the signature keys.
 
+Use JWE only for data inside tokens, not for long-term storage (for example
+in a database). `prune` deletes old keys together with their secret key,
+the data encrypted by them cannot be decrypted anymore. The keys are deleted
+only after all their tokens have expired, so data inside tokens are never
+lost.
+
 ## Create token with encrypted data
 
 ```python

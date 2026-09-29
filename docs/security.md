@@ -52,20 +52,22 @@ tokens for any user.
 
 ## 5. Tokens cannot be revoked one by one
 
-A token is valid until it expires. There is no list of revoked tokens.
+A token is valid until it expires. There is no list of revoked tokens, only
+all tokens of a key can be revoked.
 
 - Use a short `exp` for API tokens.
-- `payload` limits the number of tokens signed by one key, so a leaked key
-  affects only a limited number of tokens.
-- A leaked key: generate new keys (`genjw keys`) and delete the leaked key
-  from the storage. All tokens signed by it become invalid.
+- Rotate the keys regularly (`max_key_age`), a leaked key then affects only
+  the tokens of a limited period.
+- A leaked key: revoke it (`myjwk.revoke(kid)` or
+  `genjw revoke --kid=<kid> --yes`). All tokens signed by it become invalid
+  immediately, new keys are generated when it was the last key.
 
 ## 6. Encrypted data depend on the keys
 
 `WrapJWE` encrypts data by the secret key stored together with the signing
-key. When the key is deleted from the storage, the data encrypted by it
-cannot be decrypted anymore. Use JWE for data inside tokens with a limited
-lifetime, not for long-term storage.
+key. When the key is deleted from the storage (`prune`), the data encrypted
+by it cannot be decrypted anymore. Use JWE for data inside tokens with a
+limited lifetime, not for long-term storage.
 
 ## 7. Clock synchronisation
 
@@ -102,9 +104,11 @@ failure, never the whole token.
 
 - `StorageFile` locks writes by `fcntl.flock`. It does not work on Windows
   and it is not reliable on NFS.
-- `StorageVault` with KV v1 is not safe for concurrent processes, use KV v2.
+- `StorageVault` with KV v1 is not safe for concurrent processes and is
+  deprecated (removed in 1.0.0), use KV v2.
 - A custom storage is safe for concurrent processes only when it overrides
-  `increase_counter` and `replace_last_keys` with atomic implementations.
+  `increase_counter`, `replace_last_keys` and `update_metadata` with atomic
+  implementations.
 - `WrapJWK` and `WrapJWT` keep state (the loaded key, the last `kid`).
   Create new instances for each thread or request, do not share them.
 

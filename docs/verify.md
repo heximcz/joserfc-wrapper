@@ -13,8 +13,9 @@ and `max_age`. It returns the token or raises an exception with the reason.
 from joserfc_wrapper import InvalidTokenError, KeysLoadError
 
 try:
-    token = myjwt.verify(token)
-    print(token.header, token.claims)
+    # token is the string from create (or from the Authorization header)
+    verified = myjwt.verify(token)
+    print(verified.header, verified.claims)
 except InvalidTokenError as e:
     # invalid token: HTTP 401, log the reason (never the whole token)
     print(f"{type(e).__name__}: {e}")
@@ -26,7 +27,8 @@ except KeysLoadError:
 Other claims which must be equal in the token:
 
 ```python
-token = myjwt.verify(token, claims={"role": "admin"})
+admin_token = myjwt.create(claims={"uid": 123, "role": "admin"})
+verified = myjwt.verify(admin_token, claims={"role": "admin"})
 ```
 
 `InvalidTokenError` subclasses, when you need the exact reason:
@@ -34,6 +36,7 @@ token = myjwt.verify(token, claims={"role": "admin"})
 - `TokenDecodeError`: malformed token
 - `TokenKidInvalidError`: missing or invalid `kid` in the header
 - `TokenKidUnknownError`: `kid` is not in the storage
+- `TokenKeyRevokedError`: the key of the token is revoked
 - `TokenSignatureError`: invalid signature
 - `TokenExpiredError`: expired token (`exp` or `max_age`)
 - `TokenNotYetValidError`: `nbf` in the future

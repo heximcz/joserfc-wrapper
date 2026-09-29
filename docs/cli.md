@@ -26,7 +26,8 @@ export VAULT_KV_VERSION=2
 ```
 
 KV v2 is safe for concurrent processes (check-and-set). Use
-`VAULT_KV_VERSION=1` for keys saved by versions older than 0.3.0 in a KV v1
+`VAULT_KV_VERSION=1` (deprecated, removed in 1.0.0) for keys saved by
+versions older than 0.3.0 in a KV v1
 mount.
 
 The `--storage` switch does not need to be defined in this case since the
@@ -48,7 +49,8 @@ genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
     --exp="hours=1"
 # Full
 genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
-    --exp="minutes=10" --custom="{var1:value1,var2:value2}" --payload=10
+    --exp="minutes=10" --custom="{var1:value1,var2:value2}" \
+    --max-key-age="days=30"
 # output
 # eyJ0eXAiOiJKV1QiLCJhbGc...
 ```
@@ -116,11 +118,32 @@ genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --header=True --storage=file
   `seconds`, `minutes`, `hours`, `days`, `weeks`, for example
   `--exp="hours=2"`. A token without expiration is invalid.
 - `--custom` - other claims, they do not override the required claims.
-- `--payload` - the maximum number of tokens signed by a key, 0 (default) =
-  unlimited. When the key reaches it, a new signature key is generated
-  automatically. If a signature key is leaked or compromised, only a limited
-  number of tokens is affected. The old keys stay in the storage for
-  verifying older tokens.
+- `--max-key-age` - rotate the keys when they are older, for example
+  `--max-key-age="days=30"`. The old keys stay in the storage for verifying
+  older tokens.
+- `--payload` - deprecated, use `--max-key-age`. The maximum number of
+  tokens signed by a key, 0 (default) = unlimited.
+
+## Keys
+
+```bash
+# create the first keys or rotate the keys (the same)
+genjw keys
+genjw rotate
+
+# list all keys: kid, state (last, retired, revoked), times, tokens
+genjw list
+
+# revoke a key, all tokens signed by it become invalid
+genjw revoke --kid=<kid>        # only shows what would happen
+genjw revoke --kid=<kid> --yes  # revokes, new keys when it was the last
+
+# delete keys retired longer than the longest lifetime of your tokens
+genjw prune --lifetime="days=1"
+```
+
+`list` and `prune` need a storage which can list keys, for Vault the `list`
+capability on `<mount>/metadata/*`.
 
 ## Errors
 

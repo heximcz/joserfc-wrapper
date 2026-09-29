@@ -23,10 +23,9 @@ from joserfc_wrapper import StorageFile, WrapJWK, WrapJWT
 
 storage = StorageFile(cert_dir="/etc/myapp/keys")
 
-# create the first signature keys (only once)
+# create the first signature keys (a next call rotates them)
 jwk = WrapJWK(storage)
-jwk.generate_keys()
-jwk.save_keys()
+jwk.rotate()
 
 # the rules of your tokens, tokens expire after 1 hour
 jwt = WrapJWT(

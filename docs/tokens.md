@@ -36,8 +36,12 @@ myjwt = WrapJWT(
     default_exp=3600,  # create without exp: the token expires after 1 hour
     max_age=None,  # optional: a token is expired max_age seconds after 'iat'
     leeway=0,  # tolerance of clocks in seconds
+    max_key_age=30 * 86400,  # optional: rotate the keys every 30 days
+    max_token_lifetime=86400,  # optional: longest exp, required by prune
 )
 ```
+
+See [Signature keys](./keys.md) for `max_key_age` and `max_token_lifetime`.
 
 ## Create token
 

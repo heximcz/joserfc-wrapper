@@ -1,5 +1,24 @@
 # Upgrading
 
+## Upgrading from 0.4.x
+
+- KV v1 (`StorageVault(kv_version=1)`, `VAULT_KV_VERSION=1`) is deprecated
+  (`DeprecationWarning`), its support will be removed in 1.0.0. Move the
+  keys to a KV v2 mount, see [Vault policy](./storage.md#vault-policy).
+- `payload` of `create` (and `genjw token --payload`) is deprecated
+  (`DeprecationWarning`) and will be removed in 1.0.0, rotate the keys by
+  age: `max_key_age` of `WrapJWT` (`--max-key-age`).
+- Key records contain metadata `created`, `retired`, `revoked`. Keys saved
+  by older versions still load, they have no times: they are rotated once
+  when `max_key_age` is set and never deleted by `prune`.
+- `genjw keys` rotates the keys: the previous keys are marked retired.
+- New `WrapJWK.rotate`, `revoke`, `prune`, `list_keys` and `WrapJWT.prune`,
+  `verify` raises `TokenKeyRevokedError` for tokens of a revoked key.
+- Vault: `list_keys` and `prune` need the `list` capability on
+  `<mount>/metadata/*`, see [Vault policy](./storage.md#vault-policy).
+- Custom storages: new optional methods `update_metadata`, `list_kids`,
+  `delete_keys`. A custom `save_keys` must keep all fields of the record.
+
 ## Upgrading from 0.3.x
 
 - New `WrapJWT.verify` replaces `decode` + `validate`. `validate` is
