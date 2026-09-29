@@ -6,7 +6,7 @@ from collections.abc import Callable
 from functools import partial
 from typing import TypeVar
 from joserfc.jwk import ECKey, OctKey
-from joserfc_wrapper.Exceptions import (
+from joserfc_wrapper.exceptions import (
     ConfigurationError,
     GenerateKeysError,
     KeysLoadError,
@@ -16,7 +16,7 @@ from joserfc_wrapper.Exceptions import (
     ObjectTypeError,
     WrapperErrors,
 )
-from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
+from joserfc_wrapper.abstract_key_storage import AbstractKeyStorage
 
 T = TypeVar("T")
 
@@ -25,7 +25,16 @@ METADATA = ("created", "retired", "revoked")
 
 
 class WrapJWK:
-    """Handles generation, loading, and saving of private, public keys"""
+    """
+    Handles generation, loading, and saving of private, public keys
+
+    The methods used by WrapJWT and WrapJWE ('reserve_signing_key',
+    'load_verification_key', 'load_secret_key', 'revoke_jti',
+    'is_jti_revoked') and 'jwks', 'list_keys' and 'prune' are safe for
+    threads. 'rotate', 'revoke', 'load_keys', 'generate_keys', 'save_keys',
+    'reserve_key' and the getters of the loaded keys keep state, use a
+    separate WrapJWK for them.
+    """
 
     def __init__(self, storage: AbstractKeyStorage) -> None:
         """
@@ -228,6 +237,43 @@ class WrapJWK:
         raise KeysSaveError(
             "Unable to reserve a signature, too many rotations."
         )
+
+    def reserve_signing_key(
+        self, payload: int = 0, max_key_age: int | None = None
+    ) -> tuple[str, dict]:
+        """
+        Reserve one signature like 'reserve_key' and return the signing
+        key, used by 'WrapJWT.create'
+
+        The loaded keys of this object do not change, so one WrapJWK can be
+        shared by threads.
+
+        :param payload: deprecated, see 'reserve_key'
+        :param max_key_age: see 'reserve_key'
+        :returns: Key ID and the private key (JWK dict)
+        :raises KeysLoadError:
+        :raises KeysSaveError:
+        """
+        worker = WrapJWK(self.__storage)
+        worker.reserve_key(payload, max_key_age)
+        return worker.get_kid(), worker.get_private_key()
+
+    def load_secret_key(self, kid: str = "") -> tuple[str, dict]:
+        """
+        Return the secret key for encrypted data (JWE), used by WrapJWE
+
+        The loaded keys of this object do not change.
+
+        :param kid: Key ID, default the last keys
+        :returns: Key ID and the secret key (JWK dict)
+        :raises KeysNotFoundError: the keys do not exist in the storage
+        :raises KeysLoadError: storage error or invalid keys
+        """
+        loaded_kid, data = self.__load_record(kid)
+        secret = self.__call_storage(
+            KeysLoadError, lambda: data["keys"]["secret"]
+        )
+        return loaded_kid, secret
 
     def rotate(self) -> None:
         """

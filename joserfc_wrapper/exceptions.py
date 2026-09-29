@@ -1,6 +1,7 @@
 """joserfc_wrapper exceptions"""
 
-from typing import Optional
+import warnings
+from typing import TYPE_CHECKING, Optional
 
 
 class WrapperErrors(Exception):
@@ -52,8 +53,38 @@ class KeysNotLoadedError(WrapperErrors):
 
 
 # JWT
-class CreateTokenException(WrapperErrors):
+class CreateTokenError(WrapperErrors):
+    """Missing or invalid claims or 'exp' (renamed in 0.8.0)"""
+
     error = "Unexpected parameter in the claims."
+
+
+# deprecated names: old name -> new name
+DEPRECATED = {"CreateTokenException": "CreateTokenError"}
+
+if TYPE_CHECKING:
+    #: deprecated since 0.8.0 (removed in 1.0.0), use CreateTokenError
+    CreateTokenException = CreateTokenError
+
+
+def deprecated_name(module: str, name: str) -> type:
+    """
+    Return the class of a deprecated name with DeprecationWarning (module
+    __getattr__ of this module and of the package)
+
+    :raises AttributeError: unknown name
+    """
+    new = DEPRECATED.get(name)
+    if new is None:
+        raise AttributeError(f"module '{module}' has no attribute '{name}'")
+    warnings.warn(
+        f"{name} is deprecated, use {new}", DeprecationWarning, stacklevel=3
+    )
+    return globals()[new]
+
+
+def __getattr__(name: str) -> type:
+    return deprecated_name(__name__, name)
 
 
 class InvalidTokenError(WrapperErrors):

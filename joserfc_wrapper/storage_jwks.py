@@ -9,8 +9,8 @@ from urllib.parse import urlparse
 import requests
 from joserfc.jwk import ECKey
 
-from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
-from joserfc_wrapper.TokenHeader import is_valid_kid
+from joserfc_wrapper.abstract_key_storage import AbstractKeyStorage
+from joserfc_wrapper.token_header import is_valid_kid
 
 READ_ONLY = (
     "StorageJWKS contains only public keys, it can only verify tokens "
@@ -133,7 +133,7 @@ class StorageJWKS(AbstractKeyStorage):
         """Not supported, read-only"""
         raise NotImplementedError(READ_ONLY)
 
-    def _save_last_id(self, kid: str) -> None:
+    def save_last_kid(self, kid: str) -> None:
         """Not supported, read-only"""
         raise NotImplementedError(READ_ONLY)
 

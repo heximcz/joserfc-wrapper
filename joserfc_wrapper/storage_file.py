@@ -5,8 +5,11 @@ import json
 import tempfile
 from contextlib import contextmanager
 from typing import Iterator
-from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage, KEY_CACHE_TTL
-from joserfc_wrapper.TokenHeader import is_valid_kid, jti_digest
+from joserfc_wrapper.abstract_key_storage import (
+    AbstractKeyStorage,
+    KEY_CACHE_TTL,
+)
+from joserfc_wrapper.token_header import is_valid_kid, jti_digest
 
 try:
     import fcntl
@@ -178,8 +181,8 @@ class StorageFile(AbstractKeyStorage):
 
         return keys
 
-    def _save_last_id(self, kid: str) -> None:
-        """save last kid to file with last key"""
+    def save_last_kid(self, kid: str) -> None:
+        """Save last Key ID"""
         with self.__lock():
             self.__save_last_id_file(kid)
 

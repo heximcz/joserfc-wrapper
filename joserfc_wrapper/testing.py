@@ -1,4 +1,3 @@
-# pylint: disable=invalid-name
 """
 Contract checks of a key storage, for tests of custom storages
 
@@ -18,9 +17,9 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
-from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage
-from joserfc_wrapper.WrapJWK import WrapJWK
-from joserfc_wrapper.WrapJWT import WrapJWT
+from joserfc_wrapper.abstract_key_storage import AbstractKeyStorage
+from joserfc_wrapper.wrap_jwk import WrapJWK
+from joserfc_wrapper.wrap_jwt import WrapJWT
 
 THREADS = 4
 INCREMENTS = 10
@@ -86,6 +85,9 @@ def check_keys(storage: AbstractKeyStorage) -> None:
     other = save_new_keys(storage)
     assert storage.load_keys(kid)[0] == kid, "load_keys(kid) loads the kid"
     assert storage.get_last_kid() == other
+    storage.save_last_kid(kid)
+    assert storage.get_last_kid() == kid, "save_last_kid sets the last kid"
+    storage.save_last_kid(other)
 
     missing = uuid.uuid4().hex
     try:

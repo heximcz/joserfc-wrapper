@@ -157,7 +157,7 @@ evaluation=10.0 - ((float(5 * error + warning + refactor + convention) / stateme
 [BASIC]
 
 # Good variable names which should always be accepted, separated by a comma
-good-names=main,_
+good-names=main,_,__getattr__
 
 # Bad variable names which should always be refused, separated by a comma
 bad-names=
@@ -199,7 +199,7 @@ class-rgx=^_?[A-Z][a-zA-Z0-9]*$
 
 # Regular expression matching correct module names
 #module-rgx=^(_?[a-z][a-z0-9_]*|__init__)$
-module-naming-style=PascalCase
+module-naming-style=snake_case
 
 # Regular expression matching correct method names
 method-rgx=(?x)^(?:(?P<exempt>_[a-z0-9_]+__|runTest|setUp|tearDown|setUpTestCase|tearDownTestCase|setupSelf|tearDownClass|setUpClass|(test|assert)_*[A-Z0-9][a-zA-Z0-9_]*|next)|(?P<camel_case>_{0,2}[A-Z][a-zA-Z0-9_]*)|(?P<snake_case>_{0,2}[a-z][a-z0-9_]*))$

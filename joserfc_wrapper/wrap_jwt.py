@@ -3,10 +3,10 @@
 import time
 import uuid
 import warnings
-from joserfc_wrapper.Exceptions import (
+from joserfc_wrapper.exceptions import (
     ObjectTypeError,
     ConfigurationError,
-    CreateTokenException,
+    CreateTokenError,
     InvalidTokenError,
     KeysNotFoundError,
     TokenClaimError,
@@ -17,8 +17,8 @@ from joserfc_wrapper.Exceptions import (
     TokenNotYetValidError,
     TokenSignatureError,
 )
-from joserfc_wrapper.TokenHeader import read_kid
-from joserfc_wrapper.WrapJWK import WrapJWK
+from joserfc_wrapper.token_header import read_kid
+from joserfc_wrapper.wrap_jwk import WrapJWK
 
 from joserfc import jwt
 from joserfc.errors import (
@@ -32,7 +32,12 @@ from joserfc.jwt import Token, JWTClaimsRegistry, ClaimsOption
 
 
 class WrapJWT:
-    """Handles for JWT"""
+    """
+    Create and verify JWT
+
+    Safe for threads (since 0.8.0), one WrapJWT can be shared in the
+    application.
+    """
 
     def __init__(
         self,
@@ -75,7 +80,6 @@ class WrapJWT:
             raise ObjectTypeError
         self.__jwk: WrapJWK = wrapjwk
         self.__kid: str = ""
-        self.__key_revoked = False
 
         if issuer is not None and (not isinstance(issuer, str) or not issuer):
             raise ConfigurationError("'issuer' must be a non-empty string.")
@@ -108,7 +112,17 @@ class WrapJWT:
             )
 
     def get_kid(self) -> str:
-        """Return Key ID"""
+        """
+        Return the Key ID of the last decoded token
+
+        Deprecated since 0.8.0 (removed in 1.0.0), not reliable with
+        threads, use token.header["kid"] of the returned token.
+        """
+        warnings.warn(
+            "WrapJWT.get_kid() is deprecated, use token.header['kid']",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.__kid
 
     def decode(self, token: str) -> Token:
@@ -126,12 +140,21 @@ class WrapJWT:
         :raises KeysLoadError: storage error
         :raises JoseError: invalid signature
         """
+        return self.__decode(token)[0]
+
+    def __decode(self, token: str) -> tuple[Token, bool]:
+        """
+        Decode token, verify only the signature
+
+        :returns: token, True when its key is revoked
+        :raises: see 'decode'
+        """
         kid = read_kid(token)
+        # only for the deprecated get_kid, never read by this class
         self.__kid = kid
         public, revoked = self.__jwk.load_verification_key(kid)
-        self.__key_revoked = revoked is not None
         key = ECKey.import_key(public)
-        return jwt.decode(token, key, algorithms=["ES256"])
+        return jwt.decode(token, key, algorithms=["ES256"]), revoked is not None
 
     def verify(self, token: str, claims: dict | None = None) -> Token:
         """
@@ -155,9 +178,10 @@ class WrapJWT:
             raise ConfigurationError(
                 "Set 'issuer' and 'audience' of WrapJWT to verify tokens."
             )
-        decoded = self.__decode_signed(token)
-        if self.__key_revoked:
-            raise TokenKeyRevokedError(f"Key ID '{self.__kid}'.")
+        decoded, key_revoked = self.__decode_signed(token)
+        if key_revoked:
+            kid = decoded.header["kid"]
+            raise TokenKeyRevokedError(f"Key ID '{kid}'.")
         self.__check_token_claims(decoded, claims or {})
         if self.revocation:
             self.__check_revoked(decoded)
@@ -194,7 +218,10 @@ class WrapJWT:
 
         'iss' and 'aud' are added from WrapJWT when they are not in the
         claims, 'jti' (unique token ID) is always added when it is not in
-        the claims.
+        the claims. 'sub' (the subject, e.g. a user ID as a string) is
+        recommended, a token without it is deprecated (DeprecationWarning),
+        'sub' will be required in 1.0.0. 'uid' is optional since 0.8.0
+        (an int when present).
 
         :param claims:
         :param payload: deprecated since 0.5.0 (removed in 1.0.0), use
@@ -203,7 +230,7 @@ class WrapJWT:
         :param exp: token expires after this number of seconds, sets the
             'exp' claim, default 'default_exp' of WrapJWT, None = no
             expiration (or 'exp' in claims)
-        :raises CreateTokenException:
+        :raises CreateTokenError:
         :returns: jwt token
         """
         # do not modify the caller's claims
@@ -223,20 +250,30 @@ class WrapJWT:
                 DeprecationWarning,
                 stacklevel=2,
             )
+        if "sub" not in claims:
+            warnings.warn(
+                "a token without the 'sub' claim is deprecated, 'sub' will "
+                "be required in 1.0.0",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # load the last keys, count the token and rotate the keys by age
-        # (max_key_age), revocation or payload
-        self.__jwk.reserve_key(payload, self.max_key_age)
+        # (max_key_age), revocation or payload; the shared WrapJWK does
+        # not change (threads)
+        kid, private_key = self.__jwk.reserve_signing_key(
+            payload, self.max_key_age
+        )
 
         # create header
-        headers = {"alg": "ES256", "kid": self.__jwk.get_kid()}
+        headers = {"alg": "ES256", "kid": kid}
         # add actual iat to claims
         claims["iat"] = int(time.time())  # actual unix timestamp
         if exp is not None:
             claims["exp"] = claims["iat"] + exp
 
         # generate token
-        private = ECKey.import_key(self.__jwk.get_private_key())
+        private = ECKey.import_key(private_key)
         token = jwt.encode(headers, claims, private)
 
         return token
@@ -302,13 +339,13 @@ class WrapJWT:
         """
         Add 'iss' and 'aud' from WrapJWT, they must match when present
 
-        :raises CreateTokenException: 'iss' or 'aud' differs
+        :raises CreateTokenError: 'iss' or 'aud' differs
         """
         if self.issuer is not None:
             if "iss" not in claims:
                 claims["iss"] = self.issuer
             elif claims["iss"] != self.issuer:
-                raise CreateTokenException(
+                raise CreateTokenError(
                     f"Claim 'iss' differs from the issuer '{self.issuer}'."
                 )
         if self.audience is not None:
@@ -322,7 +359,7 @@ class WrapJWT:
                 aud = claims["aud"]
                 values = aud if isinstance(aud, list) else [aud]
                 if not values or any(v not in self.audience for v in values):
-                    raise CreateTokenException(
+                    raise CreateTokenError(
                         f"Claim 'aud' is not in the audience {self.audience}."
                     )
 
@@ -331,31 +368,42 @@ class WrapJWT:
         Checks if the claims contains all required keys with valid types.
 
         :param claims:
-        :raises CreateTokenException: invalid claims
+        :raises CreateTokenError: invalid claims
         """
         required_keys = {
             "iss": str,  # Issuer expected to be a string
             "aud": (str, list),  # Audience, a string or a list of strings
-            "uid": int,  # User ID expected to be an integer
+        }
+        # optional claims, checked when present
+        optional_keys = {
+            "sub": str,  # Subject (RFC 7519 StringOrURI)
+            "uid": int,  # User ID (not required since 0.8.0), an integer
         }
 
-        for key, expected_type in required_keys.items():
+        for key in required_keys:
             if key not in claims:
-                raise CreateTokenException(
+                raise CreateTokenError(
                     f"Missing required claims argument: '{key}'."
                 )
+        checked = {
+            **required_keys,
+            **{k: v for k, v in optional_keys.items() if k in claims},
+        }
+        for key, expected_type in checked.items():
             value = claims[key]
             # bool is a subclass of int
             if not isinstance(value, expected_type) or isinstance(value, bool):
-                raise CreateTokenException(
+                raise CreateTokenError(
                     f"Incorrect type for claims argument '{key}': "
                     f"got '{type(value).__name__}'."
                 )
+        if "sub" in claims and not claims["sub"]:
+            raise CreateTokenError("Claim 'sub' must not be empty.")
         aud = claims["aud"]
         if isinstance(aud, list) and (
             not aud or not all(isinstance(v, str) and v for v in aud)
         ):
-            raise CreateTokenException(
+            raise CreateTokenError(
                 "Claim 'aud' must be a string or a list of non-empty strings."
             )
 
@@ -363,17 +411,17 @@ class WrapJWT:
         """
         Checks the expiration parameter
 
-        :raises CreateTokenException: invalid exp or 'exp' also in claims
+        :raises CreateTokenError: invalid exp or 'exp' also in claims
         """
         if exp is None:
             return
         # bool is a subclass of int
         if not isinstance(exp, int) or isinstance(exp, bool) or exp <= 0:
-            raise CreateTokenException(
+            raise CreateTokenError(
                 "Parameter 'exp' must be a positive integer (seconds)."
             )
         if "exp" in claims:
-            raise CreateTokenException(
+            raise CreateTokenError(
                 "Set the expiration by the 'exp' parameter or in claims, "
                 "not both."
             )
@@ -382,21 +430,21 @@ class WrapJWT:
         """
         The token must expire within max_token_lifetime (when it is set)
 
-        :raises CreateTokenException: no exp or exp is too far
+        :raises CreateTokenError: no exp or exp is too far
         """
         if self.max_token_lifetime is None:
             return
         if exp is None:
             if "exp" not in claims:
-                raise CreateTokenException(
+                raise CreateTokenError(
                     "'exp' is required when 'max_token_lifetime' is set."
                 )
             claim = claims["exp"]
             if not isinstance(claim, int) or isinstance(claim, bool):
-                raise CreateTokenException("Claim 'exp' must be an integer.")
+                raise CreateTokenError("Claim 'exp' must be an integer.")
             exp = claim - int(time.time())
         if exp > self.max_token_lifetime:
-            raise CreateTokenException(
+            raise CreateTokenError(
                 f"'exp' is longer than max_token_lifetime "
                 f"({self.max_token_lifetime} seconds)."
             )
@@ -417,7 +465,7 @@ class WrapJWT:
         :raises KeysSaveError: storage error
         """
         self.__check_revocation_enabled()
-        claims = self.__decode_signed(token).claims
+        claims = self.__decode_signed(token)[0].claims
         jti, exp = claims.get("jti"), claims.get("exp")
         if not isinstance(jti, str) or not jti:
             raise TokenClaimError("Token has no 'jti', it cannot be revoked.")
@@ -445,15 +493,16 @@ class WrapJWT:
             raise ValueError("'expires_at' must be a unix timestamp (int).")
         self.__jwk.revoke_jti(jti, expires_at + self.leeway)
 
-    def __decode_signed(self, token: str) -> Token:
+    def __decode_signed(self, token: str) -> tuple[Token, bool]:
         """
         Decode a token and verify its signature
 
+        :returns: token, True when its key is revoked
         :raises InvalidTokenError: invalid token or signature, unknown kid
         :raises KeysLoadError: storage error
         """
         try:
-            return self.decode(token)
+            return self.__decode(token)
         except KeysNotFoundError as e:
             raise TokenKidUnknownError(str(e)) from e
         except BadSignatureError as e:
@@ -502,14 +551,12 @@ class WrapJWT:
         """
         A custom 'jti' must be a non-empty string
 
-        :raises CreateTokenException: invalid jti
+        :raises CreateTokenError: invalid jti
         """
         if "jti" in claims and (
             not isinstance(claims["jti"], str) or not claims["jti"]
         ):
-            raise CreateTokenException(
-                "Claim 'jti' must be a non-empty string."
-            )
+            raise CreateTokenError("Claim 'jti' must be a non-empty string.")
 
     @staticmethod
     def __check_audience(audience: str | list[str] | None) -> list[str] | None:

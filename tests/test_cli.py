@@ -8,7 +8,7 @@ import fakeredis
 import pytest
 
 from joserfc_wrapper import StorageFile, StorageRedis, WrapJWK, WrapJWT
-from joserfc_wrapper.cli.GenJWT import GenerateJWT
+from joserfc_wrapper.cli.gen_jwt import GenerateJWT
 
 
 @pytest.fixture
@@ -170,7 +170,7 @@ def test_token_bad_claims(cli, capsys):
     uid: Any = "1"
     assert_fails(
         capsys,
-        "CreateTokenException",
+        "CreateTokenError",
         cli.token,
         iss="iss",
         aud="aud",
@@ -256,7 +256,7 @@ def test_vault_kv_version(monkeypatch, version, expected):
         monkeypatch.setenv("VAULT_KV_VERSION", version)
 
     with patch(
-        "joserfc_wrapper.cli.GenJWT.StorageVault", autospec=True
+        "joserfc_wrapper.cli.gen_jwt.StorageVault", autospec=True
     ) as vault:
         GenerateJWT(storage="vault")
 
@@ -358,7 +358,7 @@ def test_vault_kv_v1_is_deprecated(monkeypatch, capsys):
         monkeypatch.setenv(var, "x")
     monkeypatch.setenv("VAULT_KV_VERSION", "1")
 
-    with patch("joserfc_wrapper.cli.GenJWT.StorageVault", autospec=True):
+    with patch("joserfc_wrapper.cli.gen_jwt.StorageVault", autospec=True):
         GenerateJWT(storage="vault")
 
     assert "KV v1 (VAULT_KV_VERSION=1) is deprecated" in capsys.readouterr().err
@@ -418,3 +418,40 @@ def test_redis_default_prefix(monkeypatch, fake_redis):
     GenerateJWT(storage="redis")
 
     assert fake_redis == [("redis://host", "jwt:")]
+
+
+def test_token_sub(cli, capsys):
+    capsys.readouterr()
+    token = cli.token(iss="iss", aud="aud", sub="user-1", exp="minutes=5")
+    assert capsys.readouterr().err == ""
+    cli.show(token=token)
+
+    claims = ast.literal_eval(capsys.readouterr().out.removeprefix("Claims: "))
+    assert claims["sub"] == "user-1"
+    assert "uid" not in claims
+
+
+def test_token_numeric_sub_is_string(cli, capsys):
+    """fire converts --sub=123 to int, the claim is a string"""
+    sub: Any = 123
+    token = cli.token(iss="iss", aud="aud", sub=sub, exp="minutes=5")
+    cli.show(token=token)
+
+    claims = ast.literal_eval(capsys.readouterr().out.removeprefix("Claims: "))
+    assert claims["sub"] == "123"
+
+
+def test_token_without_sub_is_deprecated(cli, capsys):
+    capsys.readouterr()
+    cli.token(iss="iss", aud="aud", exp="minutes=5")
+
+    err = capsys.readouterr().err
+    assert "without --sub is deprecated" in err
+    assert "--uid" not in err
+
+
+def test_token_uid_is_deprecated(cli, capsys):
+    capsys.readouterr()
+    cli.token(iss="iss", aud="aud", uid=1, sub="1", exp="minutes=5")
+
+    assert "--uid is deprecated, use --sub" in capsys.readouterr().err

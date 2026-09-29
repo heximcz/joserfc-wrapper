@@ -15,7 +15,7 @@ from joserfc_wrapper import (
     StorageRedis,
     WrapJWK,
 )
-from joserfc_wrapper.TokenHeader import jti_digest
+from joserfc_wrapper.token_header import jti_digest
 
 
 @pytest.fixture

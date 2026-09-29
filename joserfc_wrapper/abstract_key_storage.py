@@ -225,7 +225,7 @@ class AbstractKeyStorage(ABC):
         self.save_keys(kid, {**stored["data"], "counter": counter})
         # 'save_keys' sets the last Key ID
         if last_kid != kid:
-            self._save_last_id(last_kid)
+            self.save_last_kid(last_kid)
         return counter
 
     def replace_last_keys(self, last_kid: str, kid: str, keys: dict) -> str:
@@ -273,7 +273,7 @@ class AbstractKeyStorage(ABC):
         self.save_keys(kid, {**stored["data"], **metadata})
         # 'save_keys' sets the last Key ID
         if last_kid != kid:
-            self._save_last_id(last_kid)
+            self.save_last_kid(last_kid)
 
     def list_kids(self) -> list[str]:
         """
@@ -353,13 +353,35 @@ class AbstractKeyStorage(ABC):
             f"{type(self).__name__} does not support deleting keys."
         )
 
-    @abstractmethod
+    def save_last_kid(self, kid: str) -> None:
+        """
+        Save the last Key ID (the keys which sign new tokens)
+
+        Implement it in a storage (since 0.8.0). The default implementation
+        calls '_save_last_id' of storages written for older versions, it
+        will be an abstract method in 1.0.0.
+
+        :param kid: Key ID
+        :raises NotImplementedError: the storage implements neither
+            'save_last_kid' nor '_save_last_id'
+        :raises: Any
+        """
+        if type(self)._save_last_id is AbstractKeyStorage._save_last_id:
+            raise NotImplementedError(
+                f"{type(self).__name__} must implement 'save_last_kid'."
+            )
+        self._save_last_id(kid)
+
     def _save_last_id(self, kid: str) -> None:
         """
-        Save last KID
+        Save the last Key ID, deprecated since 0.8.0 (removed in 1.0.0),
+        implement 'save_last_kid'
 
-        :param kid:
-        :type kid: str
-        :returns: None
+        :param kid: Key ID
+        :raises NotImplementedError: the storage implements neither
         """
-        pass
+        if type(self).save_last_kid is AbstractKeyStorage.save_last_kid:
+            raise NotImplementedError(
+                f"{type(self).__name__} must implement 'save_last_kid'."
+            )
+        self.save_last_kid(kid)

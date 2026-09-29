@@ -5,7 +5,7 @@ import hashlib
 import binascii
 import json
 import uuid
-from joserfc_wrapper.Exceptions import TokenDecodeError, TokenKidInvalidError
+from joserfc_wrapper.exceptions import TokenDecodeError, TokenKidInvalidError
 
 
 def read_header(token: str) -> dict:

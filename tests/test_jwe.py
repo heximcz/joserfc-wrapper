@@ -8,7 +8,7 @@ from joserfc_wrapper import (
     TokenKidInvalidError,
     WrapJWE,
 )
-from joserfc_wrapper.TokenHeader import read_header
+from joserfc_wrapper.token_header import read_header
 
 
 def test_requires_wrapjwk():

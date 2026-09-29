@@ -132,11 +132,12 @@ class GenerateJWT:
         self,
         iss: str,
         aud: str,
-        uid: int,
+        uid: Optional[int] = None,
         exp: str = "",
         custom: Optional[Dict[Any, Any]] = None,
         payload: int = 0,
         max_key_age: str = "",
+        sub: Optional[str] = None,
     ) -> str:
         # pylint: disable=C0301
         """
@@ -145,9 +146,10 @@ class GenerateJWT:
         Required arguments:
             --iss=<issuer>: str
             --aud=<audince>: str
-            --uid=<id>: int
             --exp=<expire after>: str
+            --sub=<subject, e.g. user ID>: str (recommended, required in 1.0.0)
         Optional arguments:
+            --uid=<id>: int (deprecated, use --sub)
             --custom=<custom data>: dict
             --max-key-age=<rotate keys after>: str
             --payload=<signed key payload> (deprecated, use --max-key-age)
@@ -160,8 +162,19 @@ class GenerateJWT:
         claims: Dict[str, Any] = {
             "iss": iss,
             "aud": aud,
-            "uid": uid,
         }
+        if sub is not None:
+            # fire converts --sub=123 to int, 'sub' is a string
+            claims["sub"] = str(sub)
+        else:
+            print(
+                "Warning: a token without --sub is deprecated, --sub will be "
+                "required in 1.0.0.",
+                file=sys.stderr,
+            )
+        if uid is not None:
+            claims["uid"] = uid
+            print("Warning: --uid is deprecated, use --sub.", file=sys.stderr)
 
         # expiration is required, a token without exp is always invalid
         if not exp:
@@ -199,7 +212,7 @@ class GenerateJWT:
         try:
             wjwt = WrapJWT(self.__wjwk, max_key_age=key_age)
             with warnings.catch_warnings():
-                # the warning about payload is printed above
+                # the warnings about payload and sub are printed above
                 warnings.simplefilter("ignore", DeprecationWarning)
                 return wjwt.create(claims=claims, payload=payload, exp=expire)
         except Exception as e:  # pylint: disable=W0718
@@ -333,6 +346,8 @@ class GenerateJWT:
 
         Required arguments:
             --token=<jwt token>: str
+
+        The command works as revoke-token and revoke_token.
         """
         try:
             WrapJWT(self.__wjwk, revocation=True).revoke_token(token)

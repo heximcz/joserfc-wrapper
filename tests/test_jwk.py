@@ -11,6 +11,7 @@ from joserfc_wrapper import (
     WrapJWK,
     WrapJWT,
 )
+from joserfc_wrapper.testing import check_storage
 
 
 class LegacyStorage(AbstractKeyStorage):
@@ -126,6 +127,43 @@ def test_reserve_key_gives_up(jwk, storage, monkeypatch):
 
 
 @pytest.mark.filterwarnings("ignore:.payload. is deprecated:DeprecationWarning")
+class NewStyleStorage(LegacyStorage):
+    """Custom storage of 0.8.0: save_last_kid instead of _save_last_id"""
+
+    def save_keys(self, kid: str, keys: dict) -> None:
+        self.data[kid] = keys
+        self.save_last_kid(kid)
+
+    def save_last_kid(self, kid: str) -> None:
+        self.data["last-key-id"] = {"kid": kid}
+
+
+def test_new_style_storage():
+    storage = NewStyleStorage()
+    check_storage(storage, atomic=False)
+    # the deprecated method still works for old callers
+    storage._save_last_id("abc")  # pylint: disable=protected-access
+    assert storage.get_last_kid() == "abc"
+
+
+def test_storage_without_save_last_kid():
+    class Incomplete(AbstractKeyStorage):
+        def get_last_kid(self) -> str:
+            return ""
+
+        def load_keys(self, kid: str = "") -> tuple[str, dict]:
+            return kid, {}
+
+        def save_keys(self, kid: str, keys: dict) -> None:
+            self.save_last_kid(kid)
+
+    with pytest.raises(NotImplementedError, match="save_last_kid"):
+        Incomplete().save_keys("kid", {})
+    with pytest.raises(NotImplementedError, match="save_last_kid"):
+        Incomplete()._save_last_id("kid")  # pylint: disable=protected-access
+
+
+@pytest.mark.filterwarnings("ignore:.payload. is deprecated:DeprecationWarning")
 def test_legacy_storage(claims):
     storage = LegacyStorage()
     jwk = WrapJWK(storage)
@@ -137,7 +175,7 @@ def test_legacy_storage(claims):
     tokens = [jwt.create(dict(claims), payload=2) for _ in range(3)]
 
     assert storage.data[first]["counter"] == 2
-    assert storage.get_last_kid() == jwk.get_kid() != first
+    assert storage.get_last_kid() != first
     assert jwt.decode(tokens[0]).claims["uid"] == claims["uid"]
 
 

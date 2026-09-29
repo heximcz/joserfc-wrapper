@@ -2,13 +2,17 @@
 
 from joserfc import jwe
 from joserfc.jwk import OctKey
-from joserfc_wrapper.Exceptions import ObjectTypeError
-from joserfc_wrapper.TokenHeader import read_kid
-from joserfc_wrapper.WrapJWK import WrapJWK
+from joserfc_wrapper.exceptions import ObjectTypeError
+from joserfc_wrapper.token_header import read_kid
+from joserfc_wrapper.wrap_jwk import WrapJWK
 
 
 class WrapJWE:
-    """Encrypt and decrypt custom data"""
+    """
+    Encrypt and decrypt custom data
+
+    Safe for threads, one WrapJWE can be shared in the application.
+    """
 
     def __init__(self, wrapjwk: WrapJWK) -> None:
         """
@@ -28,13 +32,13 @@ class WrapJWE:
         :raises TypeError:
         """
         if isinstance(data, (str, bytes)):
-            self.__load_keys(kid)
+            used_kid, secret = self.__jwk.load_secret_key(kid)
             protected = {
                 "alg": "A128KW",
                 "enc": "A128GCM",
-                "kid": self.__jwk.get_kid(),
+                "kid": used_kid,
             }
-            key = OctKey.import_key(self.__jwk.get_secret_key())
+            key = OctKey.import_key(secret)
             return jwe.encrypt_compact(protected, data, key)
         raise TypeError("Bad type of data.")
 
@@ -53,11 +57,7 @@ class WrapJWE:
         if isinstance(data, str):
             if not kid:
                 kid = read_kid(data, required=False)
-            self.__load_keys(kid)
-            key = OctKey.import_key(self.__jwk.get_secret_key())
+            _, secret = self.__jwk.load_secret_key(kid)
+            key = OctKey.import_key(secret)
             return jwe.decrypt_compact(data, key).plaintext
         raise TypeError("Bad type of data")
-
-    def __load_keys(self, kid: str) -> None:
-        # load keys if not loaded
-        self.__jwk.load_keys(kid)

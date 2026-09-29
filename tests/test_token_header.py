@@ -5,7 +5,7 @@ import uuid
 import pytest
 
 from joserfc_wrapper import TokenDecodeError, TokenKidInvalidError
-from joserfc_wrapper.TokenHeader import is_valid_kid, read_header, read_kid
+from joserfc_wrapper.token_header import is_valid_kid, read_header, read_kid
 
 KID = uuid.uuid4().hex
 

@@ -65,7 +65,7 @@ def test_counter_and_rotation(storage, claims):
         jwt.create(claims=dict(claims), payload=2)
 
     assert storage.load_keys(first)[1]["data"]["counter"] == 2
-    assert storage.get_last_kid() == jwk.get_kid() != first
+    assert storage.get_last_kid() != first
     assert storage.load_keys()[1]["data"]["counter"] == 1
 
 

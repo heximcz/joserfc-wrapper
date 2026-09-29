@@ -9,7 +9,7 @@ import pytest
 
 from joserfc_wrapper import (
     ConfigurationError,
-    CreateTokenException,
+    CreateTokenError,
     KeysLoadError,
     KeysNotFoundError,
     StorageFile,
@@ -140,15 +140,16 @@ def test_rotation_by_max_key_age(jwk, storage):
     jwt = jwt_for(jwk, max_key_age=DAY)
 
     jwt.create({"uid": 1}, exp=60)
-    assert jwk.get_kid() == first
+    assert storage.get_last_kid() == first
 
     with later(DAY + 1):
         jwt.create({"uid": 1}, exp=60)
-    assert jwk.get_kid() != first
+    assert storage.get_last_kid() != first
 
-    retired = WrapJWK(storage)
+    retired, last = WrapJWK(storage), WrapJWK(storage)
     retired.load_keys(first)
-    assert retired.get_retired() == jwk.get_created()
+    last.load_keys()
+    assert retired.get_retired() == last.get_created()
 
 
 def test_keys_without_created_rotate_once(storage, tmp_path):
@@ -162,11 +163,11 @@ def test_keys_without_created_rotate_once(storage, tmp_path):
     jwt = jwt_for(jwk, max_key_age=DAY)
 
     jwt.create({"uid": 1}, exp=60)
-    second = jwk.get_kid()
+    second = storage.get_last_kid()
     jwt.create({"uid": 1}, exp=60)
 
     assert second != first
-    assert jwk.get_kid() == second
+    assert storage.get_last_kid() == second
 
 
 def test_revoked_last_keys_are_not_used(jwk, storage):
@@ -319,11 +320,11 @@ def test_max_token_lifetime(jwk):
     jwt = jwt_for(jwk, max_token_lifetime=3600)
 
     assert jwt.verify(jwt.create({"uid": 1}, exp=3600))
-    with pytest.raises(CreateTokenException, match="max_token_lifetime"):
+    with pytest.raises(CreateTokenError, match="max_token_lifetime"):
         jwt.create({"uid": 1}, exp=3601)
-    with pytest.raises(CreateTokenException, match="max_token_lifetime"):
+    with pytest.raises(CreateTokenError, match="max_token_lifetime"):
         jwt.create({"uid": 1, "exp": now() + 7200})
-    with pytest.raises(CreateTokenException, match="required"):
+    with pytest.raises(CreateTokenError, match="required"):
         jwt.create({"uid": 1})
 
 

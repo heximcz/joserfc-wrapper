@@ -22,7 +22,7 @@ from joserfc_wrapper import (
     WrapJWK,
     WrapJWT,
 )
-from joserfc_wrapper.cli.GenJWT import GenerateJWT
+from joserfc_wrapper.cli.gen_jwt import GenerateJWT
 from joserfc_wrapper.testing import check_read_only_storage
 
 from .test_jwk import LegacyStorage

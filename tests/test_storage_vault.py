@@ -5,7 +5,7 @@ import pytest
 from hvac.exceptions import InvalidPath, InvalidRequest
 
 from joserfc_wrapper import AbstractKeyStorage, KeysSaveError, StorageVault
-from joserfc_wrapper.TokenHeader import jti_digest
+from joserfc_wrapper.token_header import jti_digest
 
 KEYS = {
     "keys": {"private": {}, "public": {}, "secret": {}},

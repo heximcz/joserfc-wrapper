@@ -4,8 +4,11 @@ import json
 import re
 from typing import Any
 
-from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage, KEY_CACHE_TTL
-from joserfc_wrapper.TokenHeader import is_valid_kid, jti_digest
+from joserfc_wrapper.abstract_key_storage import (
+    AbstractKeyStorage,
+    KEY_CACHE_TTL,
+)
+from joserfc_wrapper.token_header import is_valid_kid, jti_digest
 
 # the key record is changed by Lua scripts, Redis runs a script atomically
 # (no other command runs in the meantime), safe for concurrent processes
@@ -190,7 +193,7 @@ class StorageRedis(AbstractKeyStorage):
         """Nothing to delete, Redis deletes expired records itself"""
         return 0
 
-    def _save_last_id(self, kid: str) -> None:
+    def save_last_kid(self, kid: str) -> None:
         """Save last Key ID"""
         self.__client.set(self.__key("last-key-id"), json.dumps({"kid": kid}))
 

@@ -4,9 +4,12 @@ import warnings
 
 import hvac
 from hvac.exceptions import InvalidPath, InvalidRequest
-from joserfc_wrapper.AbstractKeyStorage import AbstractKeyStorage, KEY_CACHE_TTL
-from joserfc_wrapper.Exceptions import KeysSaveError
-from joserfc_wrapper.TokenHeader import is_valid_kid, jti_digest
+from joserfc_wrapper.abstract_key_storage import (
+    AbstractKeyStorage,
+    KEY_CACHE_TTL,
+)
+from joserfc_wrapper.exceptions import KeysSaveError
+from joserfc_wrapper.token_header import is_valid_kid, jti_digest
 
 
 class StorageVault(AbstractKeyStorage):
@@ -73,7 +76,7 @@ class StorageVault(AbstractKeyStorage):
     def save_keys(self, kid: str, keys: dict) -> None:
         """Save keys and set them as the last keys"""
         self.__write(kid, keys)
-        self._save_last_id(kid)
+        self.save_last_kid(kid)
 
     def increase_counter(self, kid: str, limit: int = 0) -> int | None:
         """Atomically increase the counter of signed tokens of a key"""
@@ -205,7 +208,7 @@ class StorageVault(AbstractKeyStorage):
                 path=kid, mount_point=self.__mount
             )
 
-    def _save_last_id(self, kid: str) -> None:
+    def save_last_kid(self, kid: str) -> None:
         """Save last Key ID"""
         self.__write(self.last_id_path, {"kid": kid})
 

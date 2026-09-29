@@ -5,7 +5,7 @@ import pytest
 from joserfc.errors import BadSignatureError
 
 from joserfc_wrapper import (
-    CreateTokenException,
+    CreateTokenError,
     KeysLoadError,
     ObjectTypeError,
     StorageFile,
@@ -32,7 +32,8 @@ def test_create_and_decode(jwt, jwk, claims):
     }
     assert {k: decoded.claims[k] for k in claims} == claims
     assert isinstance(decoded.claims["iat"], int)
-    assert jwt.get_kid() == jwk.get_kid()
+    with pytest.warns(DeprecationWarning, match="get_kid"):
+        assert jwt.get_kid() == jwk.get_kid()
 
 
 def test_create_keeps_custom_claims(jwt, claims):
@@ -41,22 +42,55 @@ def test_create_keeps_custom_claims(jwt, claims):
     assert jwt.decode(token).claims["role"] == "admin"
 
 
-@pytest.mark.parametrize("missing", ["iss", "aud", "uid"])
+@pytest.mark.parametrize("missing", ["iss", "aud"])
 def test_create_missing_claim(jwt, claims, missing):
     del claims[missing]
 
-    with pytest.raises(CreateTokenException, match=missing):
+    with pytest.raises(CreateTokenError, match=missing):
         jwt.create(claims=claims)
 
 
 @pytest.mark.parametrize(
-    "key, value", [("iss", 1), ("aud", None), ("uid", "123"), ("uid", True)]
+    "key, value",
+    [
+        ("iss", 1),
+        ("aud", None),
+        ("uid", "123"),
+        ("uid", True),
+        ("sub", 123),
+        ("sub", ""),
+    ],
 )
 def test_create_wrong_claim_type(jwt, claims, key, value):
     claims[key] = value
 
-    with pytest.raises(CreateTokenException, match=key):
+    with pytest.raises(CreateTokenError, match=key):
         jwt.create(claims=claims)
+
+
+def test_uid_is_optional(jwt, claims):
+    """Since 0.8.0 'uid' is not required"""
+    del claims["uid"]
+
+    assert "uid" not in jwt.decode(jwt.create(claims=claims)).claims
+
+
+def test_sub(jwt, claims):
+    token = jwt.create(claims={**claims, "sub": "user-123"})
+
+    assert jwt.decode(token).claims["sub"] == "user-123"
+
+
+def test_create_without_sub_is_deprecated(jwt, claims):
+    claims.pop("sub", None)
+    with pytest.warns(DeprecationWarning, match="'sub' will be required"):
+        jwt.create(claims=claims)
+
+
+def test_create_with_sub_does_not_warn(jwt, claims, recwarn):
+    jwt.create(claims={**claims, "sub": "123"})
+
+    assert not [w for w in recwarn if "'sub'" in str(w.message)]
 
 
 def test_create_increases_counter(jwt, storage, claims):
@@ -69,14 +103,16 @@ def test_create_increases_counter(jwt, storage, claims):
 
 
 @pytest.mark.filterwarnings("ignore:.payload. is deprecated:DeprecationWarning")
-def test_create_rotates_keys_by_payload(jwt, jwk, claims):
+def test_create_rotates_keys_by_payload(jwt, jwk, storage, claims):
     first_kid = jwk.get_kid()
     tokens = [jwt.create(claims=dict(claims), payload=2) for _ in range(3)]
 
     kids = [jwt.decode(t).header["kid"] for t in tokens]
     assert kids[:2] == [first_kid, first_kid]
     assert kids[2] != first_kid
-    assert jwk.get_counter() == 1
+    last = WrapJWK(storage)
+    last.load_keys()
+    assert last.get_kid() == kids[2] and last.get_counter() == 1
 
 
 def test_decode_token_signed_by_older_key(jwt, jwk, claims):
@@ -207,17 +243,17 @@ def test_create_without_exp(jwt, claims):
 
 @pytest.mark.parametrize("exp", [0, -1, 1.5, "60", True])
 def test_create_invalid_exp(jwt, claims, exp):
-    with pytest.raises(CreateTokenException, match="positive integer"):
+    with pytest.raises(CreateTokenError, match="positive integer"):
         jwt.create(claims=dict(claims), exp=exp)
 
 
 def test_create_exp_in_claims_and_parameter(jwt, claims):
-    with pytest.raises(CreateTokenException, match="not both"):
+    with pytest.raises(CreateTokenError, match="not both"):
         jwt.create(claims={**claims, "exp": int(time.time()) + 60}, exp=60)
 
 
 def test_create_invalid_exp_does_not_count(jwt, jwk, storage, claims):
-    with pytest.raises(CreateTokenException):
+    with pytest.raises(CreateTokenError):
         jwt.create(claims=dict(claims), exp=0)
 
     assert storage.load_keys()[1]["data"]["counter"] == 0

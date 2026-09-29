@@ -4,7 +4,12 @@ import pytest
 
 from joserfc_wrapper import StorageFile, WrapJWK, WrapJWT
 
-CLAIMS = {"iss": "https://example.com", "aud": "auditor", "uid": 123}
+CLAIMS = {
+    "iss": "https://example.com",
+    "aud": "auditor",
+    "sub": "123",
+    "uid": 123,
+}
 
 
 @pytest.fixture

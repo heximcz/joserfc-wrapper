@@ -9,7 +9,7 @@ from hvac.exceptions import InvalidPath, VaultDown
 
 from joserfc_wrapper import (
     ConfigurationError,
-    CreateTokenException,
+    CreateTokenError,
     InvalidTokenError,
     KeysLoadError,
     KeysNotFoundError,
@@ -277,7 +277,7 @@ def test_create_adds_issuer_and_audience(jwk):
     ],
 )
 def test_create_conflict_with_configuration(jwt, claims):
-    with pytest.raises(CreateTokenException):
+    with pytest.raises(CreateTokenError):
         issue(jwt, **claims)
 
 
@@ -321,7 +321,7 @@ def test_create_keeps_custom_jti(jwt):
 
 @pytest.mark.parametrize("jti", ["", 1, None])
 def test_create_invalid_jti(jwt, jti):
-    with pytest.raises(CreateTokenException, match="jti"):
+    with pytest.raises(CreateTokenError, match="jti"):
         issue(jwt, jti=jti)
 
 
