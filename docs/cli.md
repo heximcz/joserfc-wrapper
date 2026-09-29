@@ -11,6 +11,11 @@ genjw keys --help [--storage=file]
 genjw token --help [--storage=file]
 genjw check --help [--storage=file]
 genjw show --help [--storage=file]
+genjw rotate --help [--storage=file]
+genjw list --help [--storage=file]
+genjw revoke --help [--storage=file]
+genjw prune --help [--storage=file]
+genjw revoke-token --help [--storage=file]
 ```
 
 ## Vault storage
@@ -112,6 +117,25 @@ Show header and claims
 genjw show --token="eyJ0eXAiOiJKV1QiLCJhbGc..." --header=True --storage=file
 ```
 
+## Redis storage
+
+Requires `pip install "joserfc-wrapper[redis]"`. Configure environment:
+
+```bash
+# redis://[[user]:password@]host[:port][/db], rediss:// for TLS
+export REDIS_URL="redis://:<password>@127.0.0.1:6379/0"
+# optional, prefix of the keys in Redis, default "jwt:"
+export REDIS_PREFIX="myapp:jwt:"
+```
+
+Use the `--storage=redis` switch with all commands:
+
+```bash
+genjw keys --storage=redis
+genjw token --iss="https://example.tld" --aud="auditor" --uid=123 \
+    --exp="hours=1" --storage=redis
+```
+
 ## Token options
 
 - `--exp` (required) - the token expires after the given time, units:
@@ -143,7 +167,22 @@ genjw prune --lifetime="days=1"
 ```
 
 `list` and `prune` need a storage which can list keys, for Vault the `list`
-capability on `<mount>/metadata/*`.
+capability on `<mount>/metadata/*`. `prune` also deletes expired records of
+revoked tokens.
+
+## Revoke a token
+
+```bash
+genjw revoke-token --token="eyJ0eXAiOiJKV1QiLCJhbGc..."
+# output
+# Token has been revoked.
+```
+
+The token must have `jti` and `exp`, the record is kept until the token
+expires. `genjw check` rejects revoked tokens (`TokenRevokedError`) when the
+storage supports token revocation (all storages of the library). The
+application must verify tokens with `revocation=True`, see
+[Revoke tokens](./verify.md#revoke-tokens).
 
 ## Errors
 
@@ -158,8 +197,8 @@ Token is invalid. TokenClaimError: Invalid claim in token.: Invalid claim: 'aud'
 Token is invalid. TokenSignatureError: Invalid token signature.
 ```
 
-`genjw check` verifies the signature, `exp` (required), `nbf`, `iss` and
-`aud` (`--iss`, `--aud`).
+`genjw check` verifies the signature, `exp` (required), `nbf`, `iss`,
+`aud` (`--iss`, `--aud`) and whether the token or its key is revoked.
 
 [< Previous: Security notes for developers](./security.md) |
 [Contents](./index.md) |

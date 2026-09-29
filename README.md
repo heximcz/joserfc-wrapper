@@ -9,10 +9,11 @@ management of signature keys.
   [joserfc](https://github.com/authlib/joserfc) library and adhering to RFC
   standards.
 - Signature keys stored in [HashiCorp Vault](https://www.vaultproject.io/)
-  (KV v2 secrets engine, KV v1 is deprecated) or on the file system, or in
-  a custom storage.
+  (KV v2 secrets engine, KV v1 is deprecated), [Redis](https://redis.io/),
+  on the file system, or in a custom storage.
 - Key lifecycle: automatic rotation by age, older tokens stay verifiable,
   revocation of leaked keys, deletion of old keys.
+- Revocation of single tokens (logout, leaked tokens).
 - Encryption of secret data (JWE), for example inside token claims.
 - Safe for concurrent processes sharing the same storage.
 - `genjw` command line tool for keys and tokens.
@@ -24,6 +25,9 @@ Requires Python 3.10 or newer.
 ```bash
 pip install joserfc-wrapper
 ```
+
+For the Redis storage install the optional dependency:
+`pip install "joserfc-wrapper[redis]"`.
 
 We recommend installing it in a virtual environment, which isolates the
 dependencies of your project from the rest of your system:
@@ -63,7 +67,8 @@ A custom storage, for example a database, must be a subclass of the
 [AbstractKeyStorage](https://github.com/heximcz/joserfc-wrapper/blob/main/joserfc_wrapper/AbstractKeyStorage.py)
 abstract class and implement the necessary methods. For concurrent processes
 override also `increase_counter`, `replace_last_keys` and `update_metadata`
-with atomic implementations.
+with atomic implementations. `joserfc_wrapper.testing.check_storage` tests
+that a custom storage keeps the contract.
 
 ## Documentation
 
@@ -72,6 +77,8 @@ Full documentation: <https://joserfc-wrapper.readthedocs.io/>
 - [Library](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md)
 - [CLI](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/cli.md)
 - [Security notes for developers](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/security.md)
+- [Upgrading from 0.5.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-05x)
+- [Upgrading from 0.4.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-04x)
 - [Upgrading from 0.3.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-03x)
 - [Upgrading from 0.2.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-02x)
 

@@ -26,11 +26,16 @@ storage = StorageVault(
     mount="<secure mount>",
     kv_version=1,
 )
+
+# Redis storage (pip install joserfc-wrapper[redis])
+storage = StorageRedis.from_url("redis://:<password>@redis.example:6379/0")
 ```
 
 `StorageFile` saves each key to `<kid>.json` and the last Key ID to
 `last-key-id.json`, both readable only by the owner (`0600`). Writes are
-atomic and locked by the `.lock` file in the same directory.
+atomic and locked by the `.lock` file in the same directory. Revoked tokens
+are saved to the `revoked/` subdirectory, `StorageVault` saves them to
+`<mount>/revoked/`.
 
 A KV v2 mount for `StorageVault` can be created by:
 
@@ -52,6 +57,8 @@ What each feature needs (checked by the Vault audit log):
 | concurrent rotation (cleanup of unused keys) | `delete` on `jwt/metadata/*` |
 | `list_keys`, `prune` | `list` on `jwt/metadata/*` |
 | `prune` | `delete` on `jwt/metadata/*` |
+| `verify` with token revocation | `read` on `jwt/data/*` |
+| `revoke_token`, `revoke_jti` | `create`, `update` on `jwt/data/*` |
 
 An application which creates and verifies tokens and manages the keys:
 
@@ -90,6 +97,59 @@ be removed in 1.0.0. Move the keys to a KV v2 mount: copy the records
 `<kid>` and `last-key-id` to the new mount, or create new keys there
 (`rotate`) and keep the KV v1 mount until the old tokens expire.
 
+## Redis
+
+`StorageRedis` needs Redis 6.2 or newer and the optional dependency
+redis-py 5 or newer:
+
+```bash
+pip install "joserfc-wrapper[redis]"
+```
+
+Create it from a URL or from a configured redis-py client, all options of
+redis-py are available (TLS, timeouts, Sentinel, ...):
+
+```python
+from joserfc_wrapper import StorageRedis
+
+# redis://, rediss:// (TLS) or unix:// URL, other options of redis.Redis
+storage = StorageRedis.from_url(
+    "rediss://app:<password>@redis.example:6380/0",
+    prefix="myapp:jwt:",
+    socket_timeout=5,
+)
+
+# or your own client
+import redis
+
+client = redis.Redis(host="redis.example", port=6379, password="...")
+storage = StorageRedis(client, prefix="myapp:jwt:")
+```
+
+- Keys: `<prefix><kid>` with the key record (JSON), `<prefix>last-key-id`
+  and `<prefix>revoked:<sha256 of jti>` for revoked tokens. The default
+  prefix is `jwt:`, use your own prefix in a shared Redis.
+- The key records are changed by Lua scripts, safe for concurrent processes.
+- **Persistence:** Redis must save the data (AOF or RDB snapshots). Without
+  persistence the keys are lost after a restart of Redis and all tokens
+  become invalid. Do not use a Redis with an eviction policy
+  (`maxmemory-policy` other than `noeviction`) for the keys.
+- **Redis Cluster:** all keys must be in one hash slot, use a prefix with a
+  hash tag, for example `prefix="{jwt}:"`.
+- Records of revoked tokens expire in Redis automatically.
+
+An ACL user for the application (replace `jwt:` by your prefix,
+`ACL SETUSER` adds the rules):
+
+```bash
+redis-cli ACL SETUSER app on ">password" "~jwt:*"
+redis-cli ACL SETUSER app +get +set +exists +del +scan +multi +exec
+redis-cli ACL SETUSER app +evalsha "+script|load"
+```
+
+`+evalsha` and `+script|load` run the Lua scripts, `+scan` and `+del` are
+needed only by `list_keys` and `prune`.
+
 ## Concurrent processes
 
 More processes can sign tokens with the same storage. The keys are rotated
@@ -99,6 +159,7 @@ tokens is increased atomically:
 - `StorageFile` locks writes with `fcntl.flock` on the `.lock` file in
   `cert_dir` (not on Windows, not reliable on NFS).
 - `StorageVault` with KV v2 uses check-and-set. KV v1 is not atomic.
+- `StorageRedis` uses Lua scripts, Redis runs each script atomically.
 - A custom storage is atomic only when it overrides `increase_counter`,
   `replace_last_keys` and `update_metadata`, see below.
 
@@ -138,6 +199,29 @@ above and are not atomic.
 For `list_keys` and `prune` implement also `list_kids()` and
 `delete_keys(kid)`. Without them the storage works, only listing and
 deleting keys raise `KeysLoadError` or `KeysSaveError`.
+
+For token revocation implement `revoke_jti(jti, expires_at)`,
+`is_jti_revoked(jti)` and `prune_revoked(now)`. Without them
+`WrapJWT(revocation=True)` raises `ConfigurationError`.
+
+### Testing a custom storage
+
+`joserfc_wrapper.testing` checks that a storage keeps the contract of
+`AbstractKeyStorage`: saving and loading keys, the counter, metadata,
+rotation, concurrent writes, and listing, deleting and token revocation
+when the storage implements them. The checks are plain functions with
+`assert`, they work with any test framework:
+
+```python
+from joserfc_wrapper.testing import check_storage
+
+
+def test_my_storage():
+    # a test storage, the checks create keys and change the last Key ID
+    check_storage(MyStorage(...))
+    # a storage without atomic methods
+    check_storage(MySimpleStorage(...), atomic=False)
+```
 
 [< Previous: Getting started](./getting-started.md) |
 [Contents](./index.md) |

@@ -38,10 +38,14 @@ myjwt = WrapJWT(
     leeway=0,  # tolerance of clocks in seconds
     max_key_age=30 * 86400,  # optional: rotate the keys every 30 days
     max_token_lifetime=86400,  # optional: longest exp, required by prune
+    revocation=False,  # optional: verify checks revoked tokens
+    require_jti=False,  # optional: with revocation, a token without jti fails
 )
 ```
 
-See [Signature keys](./keys.md) for `max_key_age` and `max_token_lifetime`.
+See [Signature keys](./keys.md) for `max_key_age` and `max_token_lifetime`,
+[Revoke tokens](./verify.md#revoke-tokens) for `revocation` and
+`require_jti`.
 
 ## Create token
 

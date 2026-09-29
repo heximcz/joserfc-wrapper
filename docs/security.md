@@ -27,8 +27,8 @@ cannot pass by mistake. `validate` is deprecated since 0.4.0.
 set `default_exp` of `WrapJWT`, or `myjwt.create(claims, exp=3600)`, or
 `genjw token --exp="hours=1"` (required by the CLI).
 
-Use a short `exp` for API tokens, a token cannot be revoked one by one
-(see 5).
+Use a short `exp` for API tokens, a revoked token is checked only with
+`revocation=True` (see 5).
 
 ## 3. Claims are readable by anyone
 
@@ -47,15 +47,23 @@ tokens for any user.
   image available to others.
 - Vault: give the application token only the paths it needs (`<mount>/data/*`
   and `<mount>/metadata/*` for rotation), never `sys/*`.
+- Redis: use a password (or an ACL user limited to the prefix of the keys,
+  see [Redis](./storage.md#redis)) and TLS (`rediss://`) outside a trusted
+  network. Do not share the Redis with applications which must not sign
+  tokens.
 - A service which only verifies tokens also needs read access to the keys
   (including the private key) in this version.
 
-## 5. Tokens cannot be revoked one by one
+## 5. Revoking tokens
 
-A token is valid until it expires. There is no list of revoked tokens, only
-all tokens of a key can be revoked.
+Without `revocation=True` of `WrapJWT` a token is valid until it expires,
+only all tokens of a key can be revoked.
 
 - Use a short `exp` for API tokens.
+- Revoke a single token (logout, a leaked token) by `revoke_token` with
+  `revocation=True`, see [Revoke tokens](./verify.md#revoke-tokens). Every
+  service which verifies tokens must enable it, otherwise it accepts the
+  revoked token.
 - Rotate the keys regularly (`max_key_age`), a leaked key then affects only
   the tokens of a limited period.
 - A leaked key: revoke it (`myjwk.revoke(kid)` or
@@ -104,6 +112,8 @@ failure, never the whole token.
 
 - `StorageFile` locks writes by `fcntl.flock`. It does not work on Windows
   and it is not reliable on NFS.
+- `StorageRedis` changes the keys by atomic Lua scripts. Redis must persist
+  the data (AOF or RDB), otherwise a restart of Redis deletes the keys.
 - `StorageVault` with KV v1 is not safe for concurrent processes and is
   deprecated (removed in 1.0.0), use KV v2.
 - A custom storage is safe for concurrent processes only when it overrides

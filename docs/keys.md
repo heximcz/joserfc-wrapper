@@ -70,7 +70,8 @@ time of revocation) until `prune` deletes it. With the CLI:
 `genjw revoke --kid=<kid> --yes` (without `--yes` it only shows what would
 happen).
 
-A single token cannot be revoked yet, only all tokens of a key.
+A single token is revoked by `revoke_token`, see
+[Revoke tokens](./verify.md#revoke-tokens).
 
 ## Delete old keys (prune)
 
@@ -86,6 +87,7 @@ deleted = myjwt.prune()  # Key IDs of the deleted keys
 - Run it from the application or from cron (`genjw prune --lifetime="days=1"`),
   it never runs automatically.
 - The last key is never deleted. Revoked keys are deleted by the same rule.
+- Records of revoked tokens (`revoke_token`) which expired are deleted too.
 - Keys created by versions older than 0.5.0 have no retirement time and are
   never deleted automatically.
 - The storage must support listing keys, `StorageVault` needs the `list`

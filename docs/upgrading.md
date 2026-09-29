@@ -1,5 +1,23 @@
 # Upgrading
 
+## Upgrading from 0.5.x
+
+No backward incompatible changes. New features:
+
+- `StorageRedis`, keys in Redis 6.2+, install
+  `pip install "joserfc-wrapper[redis]"`, see [Redis](./storage.md#redis).
+- Revocation of single tokens: `revocation=True` and `require_jti` of
+  `WrapJWT`, `revoke_token`, `revoke_jti`, new `TokenRevokedError`, see
+  [Revoke tokens](./verify.md#revoke-tokens). `prune` also deletes expired
+  records of revoked tokens.
+- `StorageFile` saves revoked tokens to the `revoked/` subdirectory of
+  `cert_dir`, `StorageVault` to `<mount>/revoked/`. `list_keys` ignores them.
+- Custom storages: new optional methods `revoke_jti`, `is_jti_revoked`,
+  `prune_revoked`. `joserfc_wrapper.testing.check_storage` tests a custom
+  storage, see [Testing a custom storage](./storage.md#testing-a-custom-storage).
+- CLI: `--storage=redis` (`REDIS_URL`, `REDIS_PREFIX`), `genjw revoke-token`,
+  `genjw check` rejects revoked tokens.
+
 ## Upgrading from 0.4.x
 
 - KV v1 (`StorageVault(kv_version=1)`, `VAULT_KV_VERSION=1`) is deprecated

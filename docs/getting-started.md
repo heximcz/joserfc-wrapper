@@ -8,6 +8,12 @@ Requires Python 3.10 or newer.
 pip install joserfc-wrapper
 ```
 
+For the Redis storage install the optional dependency:
+
+```bash
+pip install "joserfc-wrapper[redis]"
+```
+
 We recommend installing it in a virtual environment:
 
 ```bash
@@ -39,14 +45,15 @@ token = jwt.create(claims={"uid": 123})
 print(jwt.verify(token).claims)
 ```
 
-The same with HashiCorp Vault: use `StorageVault` instead of `StorageFile`,
-see [Storages](./storage.md).
+The same with HashiCorp Vault or Redis: use `StorageVault` or
+`StorageRedis` instead of `StorageFile`, see [Storages](./storage.md).
 
 ## Import
 
 ```python
 from joserfc_wrapper import (
     StorageFile,
+    StorageRedis,
     StorageVault,
     WrapJWE,
     WrapJWK,
