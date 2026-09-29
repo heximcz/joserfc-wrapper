@@ -65,6 +65,7 @@ class GenerateJWT:
 
     def __init__(self, storage: str = "vault") -> None:
         self.storage = storage
+        self.__vault_kv_version = None
         if storage == "vault":
             env_vars = ["VAULT_ADDR", "VAULT_TOKEN", "VAULT_MOUNT"]
             if not all(var in os.environ for var in env_vars):
@@ -85,7 +86,7 @@ class GenerateJWT:
                     "will be removed in 1.0.0, move the keys to a KV v2 mount.",
                     file=sys.stderr,
                 )
-            self.__vault_kv_version = int(kv_version)
+            self.__vault_kv_version: int | None = int(kv_version)
         elif storage == "file":
             var = os.environ.get("CERT_DIR")
             if var is None:
@@ -111,7 +112,7 @@ class GenerateJWT:
                     self.__vault_addr,
                     self.__vault_token,
                     self.__vault_mount,
-                    kv_version=self.__vault_kv_version,
+                    kv_version=self.__vault_kv_version or 2,
                 )
                 self.__storage: AbstractKeyStorage = vault
                 self.__wjwk = WrapJWK(vault)
@@ -342,6 +343,40 @@ class GenerateJWT:
         except Exception as e:  # pylint: disable=W0718
             fail_exception(e)
         return f"JWKS has been saved to '{output}'."
+
+    def upgrade_check(self, token: Any = None, lifetime: str = "") -> str:
+        """
+        Check the storage, the environment and tokens before the upgrade to
+        1.0.0. Prints BLOCKER (stops working after the upgrade) and WARNING
+        findings, exits with code 1 when there is a blocker.
+
+        Optional arguments:
+            --token=<jwt token>: a token created by the application, more
+              tokens separated by commas
+            --lifetime=<max token lifetime>: e.g. "days=1", reports keys
+              which 'prune' would delete
+        """
+        # pylint: disable=import-outside-toplevel
+        from joserfc_wrapper.cli.upgrade_check import (
+            BLOCKER,
+            report,
+            run_checks,
+            split_tokens,
+        )
+
+        seconds = parse_duration("--lifetime", lifetime) if lifetime else None
+        findings = run_checks(
+            self.storage,
+            self.__wjwk,
+            self.__vault_kv_version,
+            split_tokens(token),
+            seconds,
+        )
+        text = report(self.storage, findings)
+        if any(f.level == BLOCKER for f in findings):
+            print(text)
+            sys.exit(1)
+        return text
 
     def revoke_token(self, token: str) -> str:
         """
