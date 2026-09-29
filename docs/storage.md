@@ -29,7 +29,14 @@ storage = StorageVault(
 
 # Redis storage (pip install joserfc-wrapper[redis])
 storage = StorageRedis.from_url("redis://:<password>@redis.example:6379/0")
+
+# only public keys from a JWKS, for services which only verify tokens
+storage = StorageJWKS("https://auth.example.com/.well-known/jwks.json")
 ```
+
+Create the storage object once and share it in the application (all
+threads), it keeps the cache of the verification keys. `StorageJWKS` is
+described in [Verifying services (JWKS)](./jwks.md).
 
 `StorageFile` saves each key to `<kid>.json` and the last Key ID to
 `last-key-id.json`, both readable only by the owner (`0600`). Writes are
@@ -59,6 +66,7 @@ What each feature needs (checked by the Vault audit log):
 | `prune` | `delete` on `jwt/metadata/*` |
 | `verify` with token revocation | `read` on `jwt/data/*` |
 | `revoke_token`, `revoke_jti` | `create`, `update` on `jwt/data/*` |
+| `jwks`, `genjw jwks` | `list` on `jwt/metadata/*`, `read` on `jwt/data/*` |
 
 An application which creates and verifies tokens and manages the keys:
 
@@ -87,6 +95,10 @@ path "jwt/data/*" {
   capabilities = ["read"]
 }
 ```
+
+The records contain also the private keys, so a service with `read` can
+create tokens. Services which only verify tokens should use the JWKS and no
+access to Vault, see [Verifying services (JWKS)](./jwks.md).
 
 `auth/token/renew-self` is needed only when the application renews its own
 periodic token. KV v1 (`kv_version=1`) has no `data/` and `metadata/`
@@ -166,6 +178,32 @@ tokens is increased atomically:
 `WrapJWK` keeps the loaded keys, create a new `WrapJWK` and `WrapJWT` for each
 thread.
 
+## Cache of verification keys
+
+`verify` needs only the public key of a token. The storage object keeps the
+public keys (and the time of revocation) in memory for `key_cache_ttl`
+seconds (default 300), so verifying tokens does not read the storage for
+each request.
+
+```python
+# default: 300 seconds
+storage = StorageVault(url, token, mount, key_cache_ttl=60)
+# no cache, every verify reads the storage
+storage = StorageFile(cert_dir="/etc/myapp/keys", key_cache_ttl=0)
+```
+
+- The cache belongs to the storage object, share one object in the
+  application. A new `WrapJWK` and `WrapJWT` for each request use it.
+- A revoked key is rejected at once in the process which revoked it. Other
+  processes reject it after `key_cache_ttl` at the latest.
+- New keys after a rotation are not delayed, an unknown `kid` is always
+  read from the storage.
+- The revocation of single tokens (`revocation=True`) is not cached, it is
+  checked in the storage for each token.
+- `create` is not cached, it reads and writes the storage.
+- `storage.clear_key_cache()` forgets the cached keys, e.g. after changing
+  the keys by other tools.
+
 ## Custom storage
 
 A custom storage, for example a database, must be a subclass of
@@ -200,6 +238,10 @@ For `list_keys` and `prune` implement also `list_kids()` and
 `delete_keys(kid)`. Without them the storage works, only listing and
 deleting keys raise `KeysLoadError` or `KeysSaveError`.
 
+The cache of verification keys and `jwks()` work for custom storages without
+any change, they use `load_keys` and `list_kids`. Set `key_cache_ttl` as an
+attribute (`self.key_cache_ttl = 60`) to change the lifetime.
+
 For token revocation implement `revoke_jti(jti, expires_at)`,
 `is_jti_revoked(jti)` and `prune_revoked(now)`. Without them
 `WrapJWT(revocation=True)` raises `ConfigurationError`.
@@ -207,10 +249,10 @@ For token revocation implement `revoke_jti(jti, expires_at)`,
 ### Testing a custom storage
 
 `joserfc_wrapper.testing` checks that a storage keeps the contract of
-`AbstractKeyStorage`: saving and loading keys, the counter, metadata,
-rotation, concurrent writes, and listing, deleting and token revocation
-when the storage implements them. The checks are plain functions with
-`assert`, they work with any test framework:
+`AbstractKeyStorage`: saving and loading keys, verification keys and their
+cache, the counter, metadata, rotation, concurrent writes, and listing,
+deleting, JWKS and token revocation when the storage implements them. The
+checks are plain functions with `assert`, they work with any test framework:
 
 ```python
 from joserfc_wrapper.testing import check_storage
@@ -222,6 +264,9 @@ def test_my_storage():
     # a storage without atomic methods
     check_storage(MySimpleStorage(...), atomic=False)
 ```
+
+`check_read_only_storage(storage, kid)` checks a storage which only verifies
+tokens (like `StorageJWKS`).
 
 [< Previous: Getting started](./getting-started.md) |
 [Contents](./index.md) |

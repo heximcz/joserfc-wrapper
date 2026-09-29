@@ -14,6 +14,7 @@ storage
 keys
 tokens
 verify
+jwks
 jwe
 security
 cli

@@ -51,8 +51,11 @@ tokens for any user.
   see [Redis](./storage.md#redis)) and TLS (`rediss://`) outside a trusted
   network. Do not share the Redis with applications which must not sign
   tokens.
-- A service which only verifies tokens also needs read access to the keys
-  (including the private key) in this version.
+- A service which only verifies tokens with access to the storage can read
+  also the private keys. Give such services only the JWKS (`StorageJWKS`),
+  see [Verifying services (JWKS)](./jwks.md).
+- Publish the JWKS only over HTTPS. Whoever can change it on the way can add
+  own keys, `StorageJWKS` refuses `http://` by default.
 
 ## 5. Revoking tokens
 
@@ -67,8 +70,11 @@ only all tokens of a key can be revoked.
 - Rotate the keys regularly (`max_key_age`), a leaked key then affects only
   the tokens of a limited period.
 - A leaked key: revoke it (`myjwk.revoke(kid)` or
-  `genjw revoke --kid=<kid> --yes`). All tokens signed by it become invalid
-  immediately, new keys are generated when it was the last key.
+  `genjw revoke --kid=<kid> --yes`). All tokens signed by it become invalid,
+  new keys are generated when it was the last key. Other processes reject
+  them after `key_cache_ttl` (default 300 seconds) at the latest, services
+  with the JWKS after its next download (`ttl`). For an immediate reaction
+  restart the services or lower the times.
 
 ## 6. Encrypted data depend on the keys
 
@@ -121,6 +127,8 @@ failure, never the whole token.
   implementations.
 - `WrapJWK` and `WrapJWT` keep state (the loaded key, the last `kid`).
   Create new instances for each thread or request, do not share them.
+- Share one storage object in the application, its cache of verification
+  keys is safe for threads.
 
 ## 11. Vault KV v2 settings
 

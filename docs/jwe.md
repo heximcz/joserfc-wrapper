@@ -45,6 +45,6 @@ except Exception as e:
     print(f"{type(e).__name__}: {e}")
 ```
 
-[< Previous: Verifying tokens](./verify.md) |
+[< Previous: Verifying services (JWKS)](./jwks.md) |
 [Contents](./index.md) |
 [Next: Security notes for developers >](./security.md)

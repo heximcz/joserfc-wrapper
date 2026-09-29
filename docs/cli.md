@@ -15,6 +15,7 @@ genjw rotate --help [--storage=file]
 genjw list --help [--storage=file]
 genjw revoke --help [--storage=file]
 genjw prune --help [--storage=file]
+genjw jwks --help [--storage=file]
 genjw revoke-token --help [--storage=file]
 ```
 
@@ -169,6 +170,19 @@ genjw prune --lifetime="days=1"
 `list` and `prune` need a storage which can list keys, for Vault the `list`
 capability on `<mount>/metadata/*`. `prune` also deletes expired records of
 revoked tokens.
+
+## JWKS
+
+```bash
+# print the public keys (JWK Set) for services which only verify tokens
+genjw jwks
+# write them to a file for a web server (atomically, e.g. from cron)
+genjw jwks --output=/var/www/html/.well-known/jwks.json
+```
+
+The JWKS contains the last and the retired keys without the revoked keys,
+never the private keys. It needs a storage which can list keys. See
+[Verifying services (JWKS)](./jwks.md).
 
 ## Revoke a token
 

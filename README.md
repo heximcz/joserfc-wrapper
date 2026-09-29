@@ -14,6 +14,8 @@ management of signature keys.
 - Key lifecycle: automatic rotation by age, older tokens stay verifiable,
   revocation of leaked keys, deletion of old keys.
 - Revocation of single tokens (logout, leaked tokens).
+- JWKS: other services and API gateways verify tokens with the public keys
+  only, without access to the private keys. Cached verification keys.
 - Encryption of secret data (JWE), for example inside token claims.
 - Safe for concurrent processes sharing the same storage.
 - `genjw` command line tool for keys and tokens.
@@ -77,6 +79,7 @@ Full documentation: <https://joserfc-wrapper.readthedocs.io/>
 - [Library](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md)
 - [CLI](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/cli.md)
 - [Security notes for developers](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/security.md)
+- [Upgrading from 0.6.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-06x)
 - [Upgrading from 0.5.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-05x)
 - [Upgrading from 0.4.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-04x)
 - [Upgrading from 0.3.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-03x)

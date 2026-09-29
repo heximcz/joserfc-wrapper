@@ -3,8 +3,8 @@
 `joserfc-wrapper` simplifies the use of JWT and automates the management of
 signature keys: ES256 tokens, keys stored in HashiCorp Vault, Redis or on
 the file system, automatic key rotation, revocation of keys and tokens,
-encrypted data (JWE) and the `genjw` command line tool. Requires Python 3.10
-or newer.
+JWKS for services which only verify tokens, encrypted data (JWE) and the
+`genjw` command line tool. Requires Python 3.10 or newer.
 
 Before using the library to protect an API, read the
 [security notes for developers](./security.md).
@@ -12,11 +12,14 @@ Before using the library to protect an API, read the
 ## Contents
 
 - [Getting started](./getting-started.md): install, quick start
-- [Storages](./storage.md): files, HashiCorp Vault, Redis, custom storage
+- [Storages](./storage.md): files, HashiCorp Vault, Redis, cache of
+  verification keys, custom storage
 - [Signature keys](./keys.md): creating keys, key rotation
 - [Tokens](./tokens.md): configuration, creating tokens, claims, `jti`
 - [Verifying tokens](./verify.md): `verify`, revoking tokens, exceptions
   (401 vs 500)
+- [Verifying services (JWKS)](./jwks.md): public keys for other services
+  and API gateways, `StorageJWKS`
 - [Encrypted data (JWE)](./jwe.md)
 - [Security notes for developers](./security.md)
 - [CLI](./cli.md): the `genjw` command

@@ -8,6 +8,10 @@ Verify every token by `verify` before you accept it, see also the
 `verify` checks everything in one call: the signature (the key is selected
 by `kid` in the token header), `exp` (required), `nbf`, `iat`, `iss`, `aud`
 and `max_age`. It returns the token or raises an exception with the reason.
+The public keys are cached by the storage object, see
+[Cache of verification keys](./storage.md#cache-of-verification-keys).
+Services which only verify tokens can use the JWKS instead of the storage,
+see [Verifying services (JWKS)](./jwks.md).
 
 ```python
 from joserfc_wrapper import InvalidTokenError, KeysLoadError
@@ -83,7 +87,8 @@ myjwt.revoke_jti(jti, expires_at=exp)
 - `verify` reads the storage once more for each token. A storage failure
   raises `KeysLoadError` (HTTP 500), never accept the token then.
 - All processes which verify tokens must have `revocation=True` and the same
-  storage, a process without it accepts a revoked token.
+  storage, a process without it accepts a revoked token. Services with
+  `StorageJWKS` cannot check revoked tokens.
 - Tokens created by versions older than 0.4.0 have no `jti` and cannot be
   revoked. `require_jti=True` of `WrapJWT` makes them invalid.
 - The storage of the keys saves also the revoked tokens, no other storage
@@ -105,7 +110,8 @@ All exceptions of this library are subclasses of `WrapperErrors`:
 - `InvalidTokenError` and its subclasses - invalid token (HTTP 401), see
   [Verify token](#verify-token)
 - `KeysLoadError`, `KeysSaveError` - storage errors (file system, Vault,
-  Redis), the original exception is available as `__cause__`
+  Redis, an unavailable JWKS), the original exception is available as
+  `__cause__`
 - `KeysNotFoundError` - subclass of `KeysLoadError`, the keys are not in
   the storage (`verify` raises `TokenKidUnknownError` instead)
 - `KeysNotLoadedError` - `WrapJWK` getters called before `load_keys` or
@@ -125,4 +131,4 @@ Source of the exceptions and of the storage errors in `__cause__`:
 
 [< Previous: Tokens](./tokens.md) |
 [Contents](./index.md) |
-[Next: Encrypted data (JWE) >](./jwe.md)
+[Next: Verifying services (JWKS) >](./jwks.md)

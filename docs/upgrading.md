@@ -1,5 +1,24 @@
 # Upgrading
 
+## Upgrading from 0.6.x
+
+- **Cache of verification keys**, enabled by default: the storage object
+  keeps the public keys for `key_cache_ttl` seconds (default 300), `verify`
+  does not read the storage for each token. A revoked key is rejected at
+  once in the same process, in other processes after `key_cache_ttl` at the
+  latest. `key_cache_ttl=0` of the storage keeps the previous behavior. Share
+  one storage object in the application, see
+  [Cache of verification keys](./storage.md#cache-of-verification-keys).
+- `WrapJWT.decode` and `verify` load only the public key, the loaded keys of
+  `WrapJWK` do not change anymore (before, `WrapJWK` had the keys of the
+  last verified token loaded).
+- New JWKS: `WrapJWK.jwks()`, `genjw jwks` and `StorageJWKS` for services
+  which only verify tokens, see [Verifying services (JWKS)](./jwks.md).
+- Custom storages: new methods `load_verification_key`, `load_jwks` and
+  `clear_key_cache` with default implementations, no change is needed.
+  `joserfc_wrapper.testing` checks them, new `check_read_only_storage`.
+- `requests` is a direct dependency (it was installed with `hvac` before).
+
 ## Upgrading from 0.5.x
 
 No backward incompatible changes. New features:

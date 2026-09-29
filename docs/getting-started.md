@@ -47,12 +47,16 @@ print(jwt.verify(token).claims)
 
 The same with HashiCorp Vault or Redis: use `StorageVault` or
 `StorageRedis` instead of `StorageFile`, see [Storages](./storage.md).
+Create the storage once and share it in the application. Services which
+only verify tokens can use `StorageJWKS`, see
+[Verifying services (JWKS)](./jwks.md).
 
 ## Import
 
 ```python
 from joserfc_wrapper import (
     StorageFile,
+    StorageJWKS,
     StorageRedis,
     StorageVault,
     WrapJWE,

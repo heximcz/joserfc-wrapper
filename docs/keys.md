@@ -64,6 +64,12 @@ become invalid, `verify` raises `TokenKeyRevokedError`.
 myjwk.revoke(kid)
 ```
 
+Tokens of the revoked key are rejected at once in the same process. Other
+processes reject them after `key_cache_ttl` (default 300 seconds) at the
+latest, see [Cache of verification keys](./storage.md#cache-of-verification-keys),
+services with the JWKS after its next download, see
+[Verifying services (JWKS)](./jwks.md).
+
 When the revoked key is the last key, new keys are generated first, so
 creating tokens continues. The revoked key stays in the storage (with the
 time of revocation) until `prune` deletes it. With the CLI:

@@ -33,6 +33,8 @@ from joserfc_wrapper import WrapJWT, StorageFile, InvalidTokenError
    :members: __init__
 .. autoclass:: joserfc_wrapper.StorageRedis
    :members: __init__, from_url
+.. autoclass:: joserfc_wrapper.StorageJWKS
+   :members: __init__
 .. autoclass:: joserfc_wrapper.AbstractKeyStorage
 ```
 
@@ -44,6 +46,7 @@ Not exported from `joserfc_wrapper`, import it from
 
 ```{eval-rst}
 .. autofunction:: joserfc_wrapper.testing.check_storage
+.. autofunction:: joserfc_wrapper.testing.check_read_only_storage
 ```
 
 ## Exceptions
