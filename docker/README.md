@@ -12,10 +12,13 @@ It is not part of the published package and must not be used in production.
 - `vault-init` - creates the KV mounts `jwt` (KV v2) and `jwt-v1` (KV v1).
 - `redis` - Redis 6.2 (the oldest supported version) without persistence,
   available on `127.0.0.1:6379`.
+- `redis-c1`, `redis-c2`, `redis-c3` and `redis-cluster-init` - Redis
+  Cluster (Redis 7.4, 3 masters) for the tests of `StorageRedis` with
+  `redis.RedisCluster`.
 
 The `dev` container has `VAULT_ADDR`, `VAULT_TOKEN`, `VAULT_MOUNT`,
-`VAULT_MOUNT_V1`, `CERT_DIR` and `REDIS_URL` set, so `genjw` and the Vault
-and Redis tests work without any configuration.
+`VAULT_MOUNT_V1`, `CERT_DIR`, `REDIS_URL` and `REDIS_CLUSTER_URL` set, so
+`genjw` and the Vault and Redis tests work without any configuration.
 
 ## Usage
 

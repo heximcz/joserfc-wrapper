@@ -19,11 +19,14 @@ services:
       VAULT_MOUNT_V1: jwt-v1
       CERT_DIR: /keys
       REDIS_URL: redis://redis:6379/0
+      REDIS_CLUSTER_URL: redis://redis-c1:7001
     depends_on:
       vault-init:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      redis-cluster-init:
+        condition: service_completed_successfully
 
   # 6.2 = the oldest supported version, another: REDIS_VERSION=8 make up
   redis:
@@ -48,6 +51,65 @@ services:
       interval: 2s
       timeout: 2s
       retries: 15
+
+  # Redis Cluster with 3 masters for the tests of StorageRedis with
+  # redis.RedisCluster (hostnames need Redis 7+)
+  redis-c1:
+    image: redis:7.4-alpine
+    command: >-
+      redis-server --port 7001 --cluster-enabled yes
+      --cluster-config-file nodes.conf --cluster-announce-hostname redis-c1
+      --cluster-preferred-endpoint-type hostname --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7001", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  redis-c2:
+    image: redis:7.4-alpine
+    command: >-
+      redis-server --port 7002 --cluster-enabled yes
+      --cluster-config-file nodes.conf --cluster-announce-hostname redis-c2
+      --cluster-preferred-endpoint-type hostname --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7002", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  redis-c3:
+    image: redis:7.4-alpine
+    command: >-
+      redis-server --port 7003 --cluster-enabled yes
+      --cluster-config-file nodes.conf --cluster-announce-hostname redis-c3
+      --cluster-preferred-endpoint-type hostname --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7003", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  redis-cluster-init:
+    image: redis:7.4-alpine
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        redis-cli -h redis-c1 -p 7001 cluster info | grep -q 'cluster_state:ok' ||
+        redis-cli --cluster create
+        $$(getent hosts redis-c1 | cut -d' ' -f1):7001
+        $$(getent hosts redis-c2 | cut -d' ' -f1):7002
+        $$(getent hosts redis-c3 | cut -d' ' -f1):7003
+        --cluster-replicas 0 --cluster-yes &&
+        until redis-cli -h redis-c1 -p 7001 cluster info | grep -q 'cluster_state:ok'; do sleep 1; done
+    depends_on:
+      redis-c1:
+        condition: service_healthy
+      redis-c2:
+        condition: service_healthy
+      redis-c3:
+        condition: service_healthy
 
   # jwt = KV v2 (default of StorageVault), jwt-v1 = KV v1 (older versions)
   vault-init:
