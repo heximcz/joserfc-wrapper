@@ -22,6 +22,8 @@ Before using the library to protect an API, read the
   and API gateways, `StorageJWKS`
 - [Encrypted data (JWE)](./jwe.md)
 - [Security notes for developers](./security.md)
+- [Standards (RFC)](./standards.md): how the library follows the RFCs of
+  JWT
 - [CLI](./cli.md): the `genjw` command
 - [Upgrading](./upgrading.md)
 - [API reference](./api.md)

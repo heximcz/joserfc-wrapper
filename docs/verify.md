@@ -41,6 +41,8 @@ verified = myjwt.verify(admin_token, claims={"role": "admin"})
 - `TokenKidInvalidError`: missing or invalid `kid` in the header
 - `TokenKidUnknownError`: `kid` is not in the storage
 - `TokenKeyRevokedError`: the key of the token is revoked
+- `TokenTypeError`: other `typ` header than `token_type`, see
+  [Token types](./tokens.md#token-types)
 - `TokenRevokedError`: the token is revoked, see
   [Revoke tokens](#revoke-tokens)
 - `TokenSignatureError`: invalid signature
@@ -56,6 +58,45 @@ only to show a token (like `genjw show`), never to accept a token.
 
 `validate` is deprecated since 0.4.0 (`DeprecationWarning`) and will be
 removed in 1.0.0, use `verify`.
+
+## Async applications
+
+`verify` is a blocking call, it may read the storage (Vault, Redis, files).
+In async applications (FastAPI, Quart, aiohttp) run it in a thread, one
+shared `WrapJWT` is safe for threads. Thanks to the
+[cache of verification keys](./storage.md#cache-of-verification-keys) most
+calls do not read the storage.
+
+```python
+import asyncio
+
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from joserfc_wrapper import InvalidTokenError, StorageVault, WrapJWK, WrapJWT
+
+# once for the application
+storage = StorageVault(url, token, mount)
+myjwt = WrapJWT(WrapJWK(storage), issuer="https://example.com", audience="api")
+app = FastAPI()
+
+
+async def current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
+) -> str:
+    try:
+        verified = await asyncio.to_thread(myjwt.verify, credentials.credentials)
+    except InvalidTokenError:
+        raise HTTPException(status_code=401)
+    return verified.claims["sub"]
+
+
+@app.get("/me")
+async def me(user: str = Depends(current_user)) -> dict:
+    return {"sub": user}
+```
+
+`create`, `revoke_token` and the key management work the same way.
 
 ## Revoke tokens
 

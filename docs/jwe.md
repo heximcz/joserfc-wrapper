@@ -8,6 +8,10 @@ the data encrypted by them cannot be decrypted anymore. The keys are deleted
 only after all their tokens have expired, so data inside tokens are never
 lost.
 
+`WrapJWE` uses A128KW + A128GCM. Since 0.9.0 `decrypt` accepts only these
+algorithms and no compressed data (RFC 8725), data encrypted by all versions
+of the library are decrypted.
+
 ## Create token with encrypted data
 
 ```python

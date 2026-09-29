@@ -46,12 +46,43 @@ myjwt = WrapJWT(
     max_token_lifetime=86400,  # optional: longest exp, required by prune
     revocation=False,  # optional: verify checks revoked tokens
     require_jti=False,  # optional: with revocation, a token without jti fails
+    token_type=None,  # optional: the kind of tokens, e.g. "at+jwt"
 )
 ```
 
 See [Signature keys](./keys.md) for `max_key_age` and `max_token_lifetime`,
 [Revoke tokens](./verify.md#revoke-tokens) for `revocation` and
-`require_jti`.
+`require_jti`, [Token types](#token-types) for `token_type`.
+
+## Token types
+
+An application often creates more kinds of tokens with the same keys, for
+example access tokens for an API (15 minutes), refresh tokens (30 days) or
+tokens in a link of an e-mail (reset of a password). Without a check a
+token of one kind can be used as another one: a refresh token or a token
+from an e-mail sent to the API as an access token has a valid signature and
+`exp` and passes (cross-JWT confusion, RFC 8725). `aud` separates services,
+not kinds of tokens for the same service.
+
+Set the kind by `token_type`, `create` writes it to the `typ` header and
+`verify` rejects tokens of other kinds (`TokenTypeError`):
+
+```python
+access = WrapJWT(myjwk, issuer=ISS, audience="api", token_type="at+jwt")
+refresh = WrapJWT(myjwk, issuer=ISS, audience="api", token_type="refresh+jwt")
+
+token = refresh.create({"sub": "123"}, exp=30 * 86400)
+access.verify(token)  # raises TokenTypeError
+```
+
+- `at+jwt` is the type of OAuth 2.0 access tokens (RFC 9068), use your own
+  types like `refresh+jwt` or `reset+jwt` for other kinds.
+- The type is compared case-insensitively, the prefix `application/` is
+  optional.
+- Without `token_type` tokens have `typ: JWT` and `verify` does not check
+  the type (the behavior of older versions). Set `token_type` in all
+  services which create and verify the tokens.
+- With one kind of tokens it is optional, set it when you add a second one.
 
 ## Create token
 

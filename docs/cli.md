@@ -145,6 +145,9 @@ genjw token --iss="https://example.tld" --aud="auditor" --sub=123 \
 - `--sub` - the subject of the token (e.g. a user ID), a string. Recommended,
   a token without it prints a warning, required in 1.0.0.
 - `--uid` - deprecated since 0.8.0, use `--sub`. An int claim `uid`.
+- `--token-type` - the kind of the token in the `typ` header, e.g.
+  `--token-type="at+jwt"`, see [Token types](./tokens.md#token-types).
+  `genjw check --token-type=...` rejects tokens of other types.
 - `--custom` - other claims, they do not override the required claims.
 - `--max-key-age` - rotate the keys when they are older, for example
   `--max-key-age="days=30"`. The old keys stay in the storage for verifying
@@ -218,6 +221,6 @@ Token is invalid. TokenSignatureError: Invalid token signature.
 `genjw check` verifies the signature, `exp` (required), `nbf`, `iss`,
 `aud` (`--iss`, `--aud`) and whether the token or its key is revoked.
 
-[< Previous: Security notes for developers](./security.md) |
+[< Previous: Standards (RFC)](./standards.md) |
 [Contents](./index.md) |
 [Next: Upgrading >](./upgrading.md)

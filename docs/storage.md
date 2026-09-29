@@ -11,7 +11,8 @@ storage with the signing keys.
 # file storage, the directory must exist
 storage = StorageFile(cert_dir="/etc/myapp/keys")
 
-# HashiCorp Vault storage, KV v2 secrets engine (default)
+# HashiCorp Vault storage (pip install joserfc-wrapper[vault]), KV v2
+# secrets engine (default)
 storage = StorageVault(
     url="<vault url>",
     token="<token>",
@@ -43,6 +44,10 @@ described in [Verifying services (JWKS)](./jwks.md).
 atomic and locked by the `.lock` file in the same directory. Revoked tokens
 are saved to the `revoked/` subdirectory, `StorageVault` saves them to
 `<mount>/revoked/`.
+
+`StorageVault` needs the Vault client `hvac`. Install it by
+`pip install "joserfc-wrapper[vault]"`: until 0.9.x `hvac` is installed
+always, in 1.0.0 only with the `vault` extra.
 
 A KV v2 mount for `StorageVault` can be created by:
 
@@ -146,9 +151,19 @@ storage = StorageRedis(client, prefix="myapp:jwt:")
   persistence the keys are lost after a restart of Redis and all tokens
   become invalid. Do not use a Redis with an eviction policy
   (`maxmemory-policy` other than `noeviction`) for the keys.
-- **Redis Cluster:** all keys must be in one hash slot, use a prefix with a
-  hash tag, for example `prefix="{jwt}:"`.
+- **Redis Cluster:** use `redis.RedisCluster` and a prefix with a hash
+  tag, for example `prefix="{jwt}:"`, all keys must be in one hash slot
+  (one node). A cluster client without a hash tag raises `ValueError`.
+  Tested with Redis 7 and redis-py 5 and newer. The CLI (`REDIS_URL`)
+  supports only a single Redis.
 - Records of revoked tokens expire in Redis automatically.
+
+```python
+import redis
+
+client = redis.RedisCluster.from_url("redis://redis-1.example:6379")
+storage = StorageRedis(client, prefix="{myapp:jwt}:")
+```
 
 An ACL user for the application (replace `jwt:` by your prefix,
 `ACL SETUSER` adds the rules):

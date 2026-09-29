@@ -1,5 +1,31 @@
 # Upgrading
 
+## Upgrading from 0.8.x
+
+- The library was checked against the RFCs of JWT, see
+  [Standards (RFC)](./standards.md).
+- `WrapJWE.decrypt` accepts only A128KW + A128GCM without compression
+  (RFC 8725). Data encrypted by `WrapJWE` of any version are decrypted,
+  data encrypted by other tools with other algorithms are rejected.
+- `verify` raises `TokenDecodeError` for a token whose payload is not a JSON
+  object (before an `AttributeError`). `revoke_token` accepts a non-integer
+  `exp`.
+- New `token_type` of `WrapJWT` and `TokenTypeError` against confusion of
+  kinds of tokens, see [Token types](./tokens.md#token-types). Without it
+  nothing changes. CLI: `genjw token --token-type`, `genjw check
+  --token-type`.
+- `kid` in the form of a RFC 7638 thumbprint (keys created by 1.0.0) is
+  accepted, new keys still use `uuid4().hex`. Upgrade all services to 0.9.x
+  before any service uses 1.0.0.
+- `StorageVault` imports `hvac` when it is created. Install
+  `joserfc-wrapper[vault]` for Vault, `hvac` will be only in this extra in
+  1.0.0.
+- `StorageRedis` with `redis.RedisCluster` is tested and needs a prefix with
+  a hash tag (`ValueError` without it, before the writes failed).
+  `save_keys` works with redis-py 5 in a cluster.
+- 0.9.x is the last series with Python 3.10, 1.0.0 needs Python 3.11 or
+  newer.
+
 ## Upgrading from 0.7.x
 
 - `uid` is not required by `create` anymore. Use the standard claim `sub`

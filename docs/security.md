@@ -30,6 +30,10 @@ set `default_exp` of `WrapJWT`, or `myjwt.create(claims, exp=3600)`, or
 Use a short `exp` for API tokens, a revoked token is checked only with
 `revocation=True` (see 5).
 
+Different kinds of tokens (access, refresh, links in e-mails) signed by the
+same keys can be confused, set `token_type` for each kind, see
+[Token types](./tokens.md#token-types).
+
 ## 3. Claims are readable by anyone
 
 A JWT is signed, not encrypted. Anyone who has the token can read its claims
@@ -112,7 +116,9 @@ Do not return exception messages to clients, log them.
 ## 9. Do not log tokens
 
 A token is a credential. Log the `kid`, the claims or the reason of the
-failure, never the whole token.
+failure, never the whole token. Identify a token by `jti`, never by its
+string or its hash: the same token can have two valid signatures, see
+[Standards](./standards.md#things-to-know).
 
 ## 10. Concurrency and threads
 
@@ -143,4 +149,4 @@ failure, never the whole token.
 
 [< Previous: Encrypted data (JWE)](./jwe.md) |
 [Contents](./index.md) |
-[Next: CLI >](./cli.md)
+[Next: Standards (RFC) >](./standards.md)

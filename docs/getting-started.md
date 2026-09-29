@@ -8,9 +8,12 @@ Requires Python 3.10 or newer.
 pip install joserfc-wrapper
 ```
 
-For the Redis storage install the optional dependency:
+With HashiCorp Vault or Redis install the optional dependency of the
+storage (the Vault client is installed always until 0.9.x, only with the
+`vault` extra in 1.0.0):
 
 ```bash
+pip install "joserfc-wrapper[vault]"
 pip install "joserfc-wrapper[redis]"
 ```
 

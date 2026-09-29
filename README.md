@@ -6,8 +6,9 @@ management of signature keys.
 ## Features
 
 - JWT tokens signed by ES256 keys (EC P-256) using the
-  [joserfc](https://github.com/authlib/joserfc) library and adhering to RFC
-  standards.
+  [joserfc](https://github.com/authlib/joserfc) library, checked against
+  the RFCs of JWT (RFC 7519, RFC 8725), token types against confusion of
+  tokens.
 - Signature keys stored in [HashiCorp Vault](https://www.vaultproject.io/)
   (KV v2 secrets engine, KV v1 is deprecated), [Redis](https://redis.io/),
   on the file system, or in a custom storage.
@@ -21,6 +22,39 @@ management of signature keys.
   sharing one instance.
 - `genjw` command line tool for keys and tokens.
 
+## Standards
+
+The behavior is checked against the RFCs of JWT with forged tokens,
+details in
+[Standards (RFC)](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/standards.md).
+
+| | Topic | Status in 0.9 | Planned change |
+| --- | --- | --- | --- |
+| [RFC 7519][rfc7519] | JWT | yes | `sub` required (1.0.0) |
+| [RFC 7515][rfc7515] | JWS | yes (compact form) | - |
+| [RFC 7516][rfc7516] | JWE | yes (compact form) | - |
+| [RFC 7517][rfc7517] | JWK, JWK Set | yes | - |
+| [RFC 7518][rfc7518] | Algorithms (JWA) | yes, ES256, A128KW | - |
+| [RFC 7638][rfc7638] | JWK thumbprint | accepted as `kid` | `kid` of new keys (1.0.0) |
+| [RFC 8725][rfc8725] | JWT best practices | yes | - |
+| [RFC 9068][rfc9068] | JWT access tokens | partly, optional profile | `sub` required (1.0.0) |
+| [RFC 9864][rfc9864] | Fully specified algorithms | yes, ES256 | - |
+
+JWS and JWE in the compact form (a JWT), the JSON serialization is not
+supported. RFC 9068 is an optional profile of OAuth 2.0 access tokens:
+tokens follow it with `token_type="at+jwt"` and your own `client_id` claim,
+but the library supports only ES256 and the profile requires also RS256.
+
+[rfc7519]: https://www.rfc-editor.org/rfc/rfc7519
+[rfc7515]: https://www.rfc-editor.org/rfc/rfc7515
+[rfc7516]: https://www.rfc-editor.org/rfc/rfc7516
+[rfc7517]: https://www.rfc-editor.org/rfc/rfc7517
+[rfc7518]: https://www.rfc-editor.org/rfc/rfc7518
+[rfc7638]: https://www.rfc-editor.org/rfc/rfc7638
+[rfc8725]: https://www.rfc-editor.org/rfc/rfc8725
+[rfc9068]: https://www.rfc-editor.org/rfc/rfc9068
+[rfc9864]: https://www.rfc-editor.org/rfc/rfc9864
+
 ## Install
 
 Requires Python 3.10 or newer.
@@ -29,8 +63,10 @@ Requires Python 3.10 or newer.
 pip install joserfc-wrapper
 ```
 
-For the Redis storage install the optional dependency:
-`pip install "joserfc-wrapper[redis]"`.
+With HashiCorp Vault or Redis install the optional dependency of the
+storage: `pip install "joserfc-wrapper[vault]"` or
+`pip install "joserfc-wrapper[redis]"` (the Vault client is installed always
+until 0.9.x, only with the `vault` extra in 1.0.0).
 
 We recommend installing it in a virtual environment, which isolates the
 dependencies of your project from the rest of your system:
@@ -81,6 +117,8 @@ Full documentation: <https://joserfc-wrapper.readthedocs.io/>
 - [Library](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/index.md)
 - [CLI](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/cli.md)
 - [Security notes for developers](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/security.md)
+- [Standards (RFC)](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/standards.md)
+- [Upgrading from 0.8.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-08x)
 - [Upgrading from 0.7.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-07x)
 - [Upgrading from 0.6.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-06x)
 - [Upgrading from 0.5.x](https://github.com/heximcz/joserfc-wrapper/blob/main/docs/upgrading.md#upgrading-from-05x)

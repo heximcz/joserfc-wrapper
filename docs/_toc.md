@@ -17,6 +17,7 @@ verify
 jwks
 jwe
 security
+standards
 cli
 upgrading
 api
