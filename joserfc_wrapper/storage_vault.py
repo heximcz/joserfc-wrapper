@@ -1,9 +1,8 @@
 """vault manipulation class"""
 
 import warnings
+from typing import Any
 
-import hvac
-from hvac.exceptions import InvalidPath, InvalidRequest
 from joserfc_wrapper.abstract_key_storage import (
     AbstractKeyStorage,
     KEY_CACHE_TTL,
@@ -17,8 +16,6 @@ class StorageVault(AbstractKeyStorage):
 
     # attempts to write with check-and-set before giving up
     cas_attempts = 100
-
-    not_found_errors = (InvalidPath,)
 
     def __init__(
         self,
@@ -42,8 +39,14 @@ class StorageVault(AbstractKeyStorage):
             seconds (default 300, 0 = no cache), see
             'AbstractKeyStorage.load_verification_key'
         :raises ValueError: unsupported kv_version, invalid key_cache_ttl
+        :raises ImportError: hvac is not installed (an optional dependency
+            since 1.0.0: pip install joserfc-wrapper[vault])
         """
         self.key_cache_ttl = key_cache_ttl
+        hvac = import_hvac()
+        self.__invalid_path = hvac.exceptions.InvalidPath
+        self.__invalid_request = hvac.exceptions.InvalidRequest
+        self.not_found_errors = (self.__invalid_path,)
         if kv_version not in (1, 2):
             raise ValueError("kv_version must be 1 or 2")
         if kv_version == 1:
@@ -149,7 +152,7 @@ class StorageVault(AbstractKeyStorage):
         """Return True when the token ID is revoked (one read)"""
         try:
             self.__read(f"revoked/{jti_digest(jti)}")
-        except InvalidPath:
+        except self.__invalid_path:
             return False
         return True
 
@@ -169,14 +172,14 @@ class StorageVault(AbstractKeyStorage):
                 result = self.__client.secrets.kv.v2.list_secrets(
                     path="revoked", mount_point=self.__mount
                 )
-        except InvalidPath:
+        except self.__invalid_path:
             return 0
         deleted = 0
         for name in result["data"]["keys"]:
             path = f"revoked/{name}"
             try:
                 record, _ = self.__read(path)
-            except InvalidPath:
+            except self.__invalid_path:
                 # deleted by another process in the meantime
                 continue
             if record["exp"] < now:
@@ -248,8 +251,23 @@ class StorageVault(AbstractKeyStorage):
             self.__client.secrets.kv.v2.create_or_update_secret(
                 mount_point=self.__mount, path=path, secret=secret, cas=version
             )
-        except InvalidRequest as e:
+        except self.__invalid_request as e:
             if "check-and-set" in str(e):
                 return False
             raise
         return True
+
+
+def import_hvac() -> Any:
+    """
+    Import hvac (the Vault client), an optional dependency since 1.0.0
+
+    :raises ImportError: hvac is not installed
+    """
+    try:
+        import hvac  # pylint: disable=import-outside-toplevel
+    except ImportError as e:
+        raise ImportError(
+            "StorageVault requires hvac: pip install joserfc-wrapper[vault]"
+        ) from e
+    return hvac

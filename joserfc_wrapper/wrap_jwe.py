@@ -6,6 +6,9 @@ from joserfc_wrapper.exceptions import ObjectTypeError
 from joserfc_wrapper.token_header import read_kid
 from joserfc_wrapper.wrap_jwk import WrapJWK
 
+# the key wrapping and the content encryption used by this library
+JWE_ALGORITHMS = ["A128KW", "A128GCM"]
+
 
 class WrapJWE:
     """
@@ -53,11 +56,16 @@ class WrapJWE:
         :raises TypeError:
         :raises TokenDecodeError: malformed data
         :raises TokenKidInvalidError: invalid KID in the header
+        :raises JoseError: invalid data, other algorithms than A128KW and
+            A128GCM, compressed data ('zip')
         """
         if isinstance(data, str):
             if not kid:
                 kid = read_kid(data, required=False)
             _, secret = self.__jwk.load_secret_key(kid)
             key = OctKey.import_key(secret)
-            return jwe.decrypt_compact(data, key).plaintext
+            # only the algorithms of this library (RFC 8725), no 'zip'
+            return jwe.decrypt_compact(
+                data, key, algorithms=JWE_ALGORITHMS
+            ).plaintext
         raise TypeError("Bad type of data")

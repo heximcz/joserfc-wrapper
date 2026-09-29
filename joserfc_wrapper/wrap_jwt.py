@@ -1,5 +1,6 @@
 """joserfc jwt wrapper"""
 
+import math
 import time
 import uuid
 import warnings
@@ -10,10 +11,12 @@ from joserfc_wrapper.exceptions import (
     InvalidTokenError,
     KeysNotFoundError,
     TokenClaimError,
+    TokenDecodeError,
     TokenExpiredError,
     TokenKidUnknownError,
     TokenKeyRevokedError,
     TokenRevokedError,
+    TokenTypeError,
     TokenNotYetValidError,
     TokenSignatureError,
 )
@@ -29,6 +32,15 @@ from joserfc.errors import (
 )
 from joserfc.jwk import ECKey
 from joserfc.jwt import Token, JWTClaimsRegistry, ClaimsOption
+
+
+def normalize_type(typ: str) -> str:
+    """
+    Compare 'typ' values: media types are case-insensitive, the prefix
+    'application/' is optional (RFC 7515 4.1.9)
+    """
+    typ = typ.strip().lower()
+    return typ.removeprefix("application/")
 
 
 class WrapJWT:
@@ -51,6 +63,7 @@ class WrapJWT:
         max_token_lifetime: int | None = None,
         revocation: bool = False,
         require_jti: bool = False,
+        token_type: str | None = None,
     ) -> None:
         """
         :param wrapjwk: keys of the storage
@@ -73,6 +86,11 @@ class WrapJWT:
             StorageFile), one more storage read for each token
         :param require_jti: with revocation, a token without 'jti' (created
             by versions older than 0.4.0) is invalid
+        :param token_type: the kind of tokens, e.g. "at+jwt" (access tokens,
+            RFC 9068) or an own type like "refresh+jwt": 'create' writes it
+            to the 'typ' header, 'verify' refuses other types
+            (TokenTypeError), so a token of one kind cannot be used as
+            another (RFC 8725). None = 'typ: JWT' without a check.
         :raises ObjectTypeError: wrapjwk is not WrapJWK
         :raises ConfigurationError: invalid parameters
         """
@@ -102,6 +120,11 @@ class WrapJWT:
             )
         self.revocation = revocation
         self.require_jti = require_jti
+        if token_type is not None and (
+            not isinstance(token_type, str) or not normalize_type(token_type)
+        ):
+            raise ConfigurationError("'token_type' must be a non-empty string.")
+        self.token_type = token_type
         if (
             self.max_token_lifetime is not None
             and self.default_exp is not None
@@ -154,7 +177,11 @@ class WrapJWT:
         self.__kid = kid
         public, revoked = self.__jwk.load_verification_key(kid)
         key = ECKey.import_key(public)
-        return jwt.decode(token, key, algorithms=["ES256"]), revoked is not None
+        decoded = jwt.decode(token, key, algorithms=["ES256"])
+        # the payload of a JWT is a JSON object (RFC 7519)
+        if not isinstance(decoded.claims, dict):
+            raise TokenDecodeError("The payload is not a JSON object.")
+        return decoded, revoked is not None
 
     def verify(self, token: str, claims: dict | None = None) -> Token:
         """
@@ -182,10 +209,25 @@ class WrapJWT:
         if key_revoked:
             kid = decoded.header["kid"]
             raise TokenKeyRevokedError(f"Key ID '{kid}'.")
+        if self.token_type is not None:
+            self.__check_type(decoded)
         self.__check_token_claims(decoded, claims or {})
         if self.revocation:
             self.__check_revoked(decoded)
         return decoded
+
+    def __check_type(self, token: Token) -> None:
+        """
+        :raises TokenTypeError: the 'typ' header differs from token_type
+        """
+        typ = token.header.get("typ")
+        assert self.token_type is not None
+        if not isinstance(typ, str) or normalize_type(typ) != normalize_type(
+            self.token_type
+        ):
+            raise TokenTypeError(
+                f"Expected type '{self.token_type}', got {typ!r}."
+            )
 
     def validate(self, token: Token, claims: dict) -> bool:
         """
@@ -267,6 +309,8 @@ class WrapJWT:
 
         # create header
         headers = {"alg": "ES256", "kid": kid}
+        if self.token_type is not None:
+            headers["typ"] = self.token_type
         # add actual iat to claims
         claims["iat"] = int(time.time())  # actual unix timestamp
         if exp is not None:
@@ -469,11 +513,12 @@ class WrapJWT:
         jti, exp = claims.get("jti"), claims.get("exp")
         if not isinstance(jti, str) or not jti:
             raise TokenClaimError("Token has no 'jti', it cannot be revoked.")
-        if not isinstance(exp, int) or isinstance(exp, bool):
+        # NumericDate, an int or a float (RFC 7519)
+        if not isinstance(exp, (int, float)) or isinstance(exp, bool):
             raise TokenClaimError("Token has no 'exp', it cannot be revoked.")
         if exp < int(time.time()) - self.leeway:
             return
-        self.__jwk.revoke_jti(jti, exp + self.leeway)
+        self.__jwk.revoke_jti(jti, math.ceil(exp) + self.leeway)
 
     def revoke_jti(self, jti: str, expires_at: int) -> None:
         """

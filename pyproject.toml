@@ -27,6 +27,9 @@ dependencies = [
 [project.optional-dependencies]
 # StorageRedis: pip install joserfc-wrapper[redis]
 redis = ["redis>=5.0.0,<9.0.0"]
+# StorageVault: pip install joserfc-wrapper[vault] (hvac is also in the
+# dependencies until 1.0.0)
+vault = ["hvac[parser]>=2.4.0,<3.0.0"]
 
 [project.scripts]
 genjw = "joserfc_wrapper.cli.gen_jwt:run"

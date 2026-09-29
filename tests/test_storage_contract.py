@@ -9,7 +9,7 @@ import pytest
 from joserfc_wrapper import StorageFile, StorageRedis, StorageVault
 from joserfc_wrapper.testing import check_storage
 
-from .conftest import redis_url, vault_env
+from .conftest import redis_cluster_url, redis_url, vault_env
 from .test_jwk import LegacyStorage
 
 
@@ -59,3 +59,15 @@ def test_redis():
         pytest.skip("Redis is not configured (REDIS_URL)")
     # own prefix, the checks do not see keys of other tests
     check_storage(StorageRedis.from_url(url, prefix=f"{uuid.uuid4().hex}:"))
+
+
+@pytest.mark.redis
+def test_redis_cluster():
+    """Redis Cluster: all keys in one slot by a hash tag in the prefix"""
+    url = redis_cluster_url()
+    if url is None:
+        pytest.skip("Redis Cluster is not configured (REDIS_CLUSTER_URL)")
+    import redis  # pylint: disable=import-outside-toplevel
+
+    client = redis.RedisCluster.from_url(url)
+    check_storage(StorageRedis(client, prefix=f"{{{uuid.uuid4().hex}}}:"))

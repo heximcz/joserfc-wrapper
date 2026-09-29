@@ -55,6 +55,22 @@ return 1
 """
 
 
+# save keys and set them as the last keys in one step (also in a cluster,
+# redis-py 5 has no transactions in cluster mode)
+SAVE_KEYS = """
+redis.call("SET", KEYS[1], ARGV[1])
+redis.call("SET", KEYS[2], ARGV[2])
+return 1
+"""
+
+
+def has_hash_tag(prefix: str) -> bool:
+    """The prefix has a Redis Cluster hash tag, e.g. '{jwt}:'"""
+    start = prefix.find("{")
+    end = prefix.find("}", start + 1) if start >= 0 else -1
+    return start >= 0 and end > start + 1
+
+
 class RedisKeyNotFoundError(LookupError):
     """The key does not exist in Redis"""
 
@@ -81,21 +97,29 @@ class StorageRedis(AbstractKeyStorage):
         """
         :param client: configured client, e.g. redis.Redis(host=..., port=...,
             password=..., ssl=...) or redis.Redis.from_url(...)
-        :param prefix: prefix of all keys, for a shared Redis
+        :param prefix: prefix of all keys, for a shared Redis. Redis Cluster
+            (redis.RedisCluster) needs a hash tag, e.g. "{jwt}:"
         :param key_cache_ttl: lifetime of cached verification keys in
             seconds (default 300, 0 = no cache), see
             'AbstractKeyStorage.load_verification_key'
         :raises ImportError: redis-py is not installed
-        :raises ValueError: invalid key_cache_ttl
+        :raises ValueError: invalid key_cache_ttl, a redis.RedisCluster
+            client with a prefix without a hash tag
         """
         self.key_cache_ttl = key_cache_ttl
-        self.__import_redis()
         self.__client = client
         self.prefix = prefix
+        redis = self.__import_redis()
+        if isinstance(client, redis.RedisCluster) and not has_hash_tag(prefix):
+            raise ValueError(
+                "Redis Cluster needs a prefix with a hash tag (all keys in "
+                "one slot), e.g. prefix='{jwt}:'."
+            )
         # scripts are registered once, redis-py sends them by SHA
         self.__increase_counter = client.register_script(INCREASE_COUNTER)
         self.__replace_last_keys = client.register_script(REPLACE_LAST_KEYS)
         self.__update_metadata = client.register_script(UPDATE_METADATA)
+        self.__save_keys = client.register_script(SAVE_KEYS)
 
     @classmethod
     def from_url(
@@ -136,10 +160,10 @@ class StorageRedis(AbstractKeyStorage):
 
     def save_keys(self, kid: str, keys: dict) -> None:
         """Save keys and set them as the last keys (one transaction)"""
-        pipe = self.__client.pipeline(transaction=True)
-        pipe.set(self.__key(kid), json.dumps(keys))
-        pipe.set(self.__key("last-key-id"), json.dumps({"kid": kid}))
-        pipe.execute()
+        self.__save_keys(
+            keys=[self.__key(kid), self.__key("last-key-id")],
+            args=[json.dumps(keys), json.dumps({"kid": kid})],
+        )
 
     def increase_counter(self, kid: str, limit: int = 0) -> int | None:
         """Atomically increase the counter of signed tokens of a key"""

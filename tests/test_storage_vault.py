@@ -1,3 +1,6 @@
+import builtins
+import subprocess
+import sys
 import uuid
 from unittest.mock import patch
 
@@ -323,3 +326,28 @@ class TestLifecycleKvV2:
         kv.list_secrets.side_effect = InvalidPath()
 
         assert vault.prune_revoked(100) == 0
+
+
+def test_hvac_not_installed():
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "hvac":
+            raise ImportError("No module named 'hvac'")
+        return real_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=fake_import):
+        with pytest.raises(ImportError, match=r"joserfc-wrapper\[vault\]"):
+            StorageVault("url", "token", "mount")
+
+
+def test_package_import_does_not_need_hvac():
+    code = (
+        "import sys, joserfc_wrapper; "
+        "print('hvac' in sys.modules, 'redis' in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+
+    assert result.stdout.split() == ["False", "False"]

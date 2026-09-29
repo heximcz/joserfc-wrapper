@@ -455,3 +455,23 @@ def test_token_uid_is_deprecated(cli, capsys):
     cli.token(iss="iss", aud="aud", uid=1, sub="1", exp="minutes=5")
 
     assert "--uid is deprecated, use --sub" in capsys.readouterr().err
+
+
+def test_token_type(cli, capsys):
+    token = cli.token(
+        iss="iss", aud="aud", sub="1", exp="minutes=5", token_type="at+jwt"
+    )
+
+    assert (
+        cli.check(iss="iss", aud="aud", token=token, token_type="at+jwt")
+        == "Token is valid."
+    )
+    assert_fails(
+        capsys,
+        "TokenTypeError",
+        cli.check,
+        iss="iss",
+        aud="aud",
+        token=token,
+        token_type="refresh+jwt",
+    )

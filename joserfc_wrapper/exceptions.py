@@ -109,6 +109,12 @@ class TokenRevokedError(InvalidTokenError):
     error = "Token is revoked."
 
 
+class TokenTypeError(InvalidTokenError):
+    """The 'typ' header differs from 'token_type' of WrapJWT (since 0.9.0)"""
+
+    error = "Invalid token type."
+
+
 class TokenKeyRevokedError(InvalidTokenError):
     error = "The key of the token is revoked."
 

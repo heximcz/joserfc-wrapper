@@ -138,6 +138,7 @@ class GenerateJWT:
         payload: int = 0,
         max_key_age: str = "",
         sub: Optional[str] = None,
+        token_type: Optional[str] = None,
     ) -> str:
         # pylint: disable=C0301
         """
@@ -150,6 +151,7 @@ class GenerateJWT:
             --sub=<subject, e.g. user ID>: str (recommended, required in 1.0.0)
         Optional arguments:
             --uid=<id>: int (deprecated, use --sub)
+            --token-type=<typ header>: str, e.g. "at+jwt"
             --custom=<custom data>: dict
             --max-key-age=<rotate keys after>: str
             --payload=<signed key payload> (deprecated, use --max-key-age)
@@ -210,7 +212,9 @@ class GenerateJWT:
 
         # ok do token
         try:
-            wjwt = WrapJWT(self.__wjwk, max_key_age=key_age)
+            wjwt = WrapJWT(
+                self.__wjwk, max_key_age=key_age, token_type=token_type
+            )
             with warnings.catch_warnings():
                 # the warnings about payload and sub are printed above
                 warnings.simplefilter("ignore", DeprecationWarning)
@@ -355,7 +359,9 @@ class GenerateJWT:
             fail_exception(e)
         return "Token has been revoked."
 
-    def check(self, iss: str, aud: str, token: str) -> str:
+    def check(
+        self, iss: str, aud: str, token: str, token_type: Optional[str] = None
+    ) -> str:
         """
         Check validity of a token (and revocation of the token when the
         storage supports it)
@@ -364,6 +370,8 @@ class GenerateJWT:
             --iss=<issuer>: str
             --aud=<audience>: str
             --token=<jwt token>: str
+        Optional arguments:
+            --token-type=<typ header>: str, the token must have this type
         """
         try:
             WrapJWT(
@@ -371,6 +379,7 @@ class GenerateJWT:
                 issuer=iss,
                 audience=aud,
                 revocation=self.__wjwk.supports_token_revocation(),
+                token_type=token_type,
             ).verify(token)
         except InvalidTokenError as e:
             fail(f"Token is invalid. {type(e).__name__}: {str(e)}")

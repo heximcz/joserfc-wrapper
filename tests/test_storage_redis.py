@@ -4,7 +4,7 @@ import builtins
 import json
 import time
 import uuid
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import fakeredis
 import pytest
@@ -15,6 +15,7 @@ from joserfc_wrapper import (
     StorageRedis,
     WrapJWK,
 )
+from joserfc_wrapper.storage_redis import has_hash_tag
 from joserfc_wrapper.token_header import jti_digest
 
 
@@ -121,3 +122,20 @@ def test_redis_not_installed(client):
     with patch("builtins.__import__", side_effect=fake_import):
         with pytest.raises(ImportError, match=r"joserfc-wrapper\[redis\]"):
             StorageRedis(client)
+
+
+@pytest.mark.parametrize(
+    "prefix, tagged",
+    [("{jwt}:", True), ("app:{jwt}:", True), ("jwt:", False), ("{}:", False)],
+)
+def test_has_hash_tag(prefix, tagged):
+    assert has_hash_tag(prefix) is tagged
+
+
+def test_cluster_needs_hash_tag():
+    import redis  # pylint: disable=import-outside-toplevel
+
+    client = MagicMock(spec=redis.RedisCluster)
+    with pytest.raises(ValueError, match="hash tag"):
+        StorageRedis(client, prefix="jwt:")
+    StorageRedis(client, prefix="{jwt}:")

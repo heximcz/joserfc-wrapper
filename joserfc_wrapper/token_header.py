@@ -4,6 +4,7 @@ import base64
 import hashlib
 import binascii
 import json
+import re
 import uuid
 from joserfc_wrapper.exceptions import TokenDecodeError, TokenKidInvalidError
 
@@ -59,8 +60,19 @@ def jti_digest(jti: str) -> str:
     return hashlib.sha256(jti.encode("utf-8")).hexdigest()
 
 
+# RFC 7638 JWK thumbprint: base64url SHA-256 without padding
+THUMBPRINT = re.compile(r"[A-Za-z0-9_-]{43}")
+
+
 def is_valid_kid(kid: str) -> bool:
-    """Key ID must be uuid4 in hex format"""
+    """
+    Key ID must be uuid4 in hex format (keys of versions up to 0.9.x) or
+    a RFC 7638 JWK thumbprint (base64url SHA-256, keys since 1.0.0)
+    """
+    if not isinstance(kid, str):
+        return False
+    if THUMBPRINT.fullmatch(kid):
+        return True
     try:
         parsed = uuid.UUID(kid)
         return parsed.version == 4 and parsed.hex == kid

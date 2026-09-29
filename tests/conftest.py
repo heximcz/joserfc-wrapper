@@ -47,3 +47,8 @@ def vault_env() -> dict | None:
 def redis_url() -> str | None:
     """Redis connection from environment (set in docker dev environment)"""
     return os.environ.get("REDIS_URL") or None
+
+
+def redis_cluster_url() -> str | None:
+    """Redis Cluster connection (docker dev environment)"""
+    return os.environ.get("REDIS_CLUSTER_URL") or None
